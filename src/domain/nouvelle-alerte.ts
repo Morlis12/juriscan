@@ -138,6 +138,37 @@ export function simulerAnalyseAlerte(source: DocumentSource): {
   };
 }
 
+/**
+ * Formulaire vierge pour la saisie manuelle libre (sans document) :
+ * 21 colonnes vides, neutres, prêtes à la frappe clavier.
+ * Seul le département reprend la première option (sélecteur oblige).
+ */
+export function creerAlerteVierge(): AlerteAnalyse21 {
+  return {
+    numeroOrdre: "",
+    qssfte: "",
+    natureTexte: "",
+    referenceTexte: "",
+    article: "",
+    resumeTexte: "",
+    libelleApplicable: "",
+    lienHypertexte: "",
+    dateEntreeVigueur: "",
+    contenu: "",
+    moyenCommunication: "",
+    applicableAGLCI: true,
+    departementResponsable: "DJ",
+    actionsExistantes: "",
+    preuvesExistantes: "",
+    statutConformite: "NON_CONFORME_0",
+    preuveDifferee: "",
+    libelleAction: "",
+    responsable: "",
+    delai: "",
+    tauxAvancement: 0,
+  };
+}
+
 function hashCode(s: string): number {
   let h = 0;
   for (let i = 0; i < s.length; i++) {
