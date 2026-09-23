@@ -19,7 +19,7 @@ export async function POST(req: Request) {
 
     // APPEL OCR ET MULTIMODAL ULTRA-STABLE VIA LE SDK VERCEL AI
     const response = await generateText({
-      model: google('gemini-1.5-flash'),
+      model: google('gemini-2.5-flash'),
       system: "Tu es l'expert en OCR d'Africa Global Logistics (AGL CI). Analyse le document reçu (CV, décret, ou alerte) et extrais fidèlement ses informations réelles sans rien inventer.",
       messages: [
         {
