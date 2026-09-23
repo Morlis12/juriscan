@@ -6,13 +6,16 @@ import { useParams, useRouter } from "next/navigation";
 import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
+  simulerAnalyseAlerte,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
+import { MOCK_ALERTES } from "@/data/veille-mock";
 
 /**
- * JuriScan AI — Modification d'une fiche enregistrée (21 colonnes).
- * GET /api/veille/[id] (findUnique) → formulaire → PUT → /dashboard.
- * Les lignes `mock-*` sont des démos non persistées : édition désactivée.
+ * JuriScan AI — Modification d'une fiche (21 colonnes, toujours éditable).
+ * - Ligne persistée (`db-…`) : GET /api/veille/[id] (findUnique) → PUT → /dashboard.
+ * - Ligne de démonstration (`mock-*`) : pré-remplissage local depuis les mocks,
+ *   sauvegarde simulée (800ms) → /dashboard avec message de succès.
  */
 
 const STATUTS = [
@@ -60,6 +63,7 @@ export default function ModifierAlertePage() {
   const router = useRouter();
   const [form, setForm] = useState<AlerteAnalyse21 | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [demo, setDemo] = useState(false);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -67,6 +71,39 @@ export default function ModifierAlertePage() {
 
   useEffect(() => {
     let actif = true;
+
+    // Démonstration : pré-remplit le formulaire depuis les données simulées.
+    if (params.id.startsWith("mock-")) {
+      const mock = MOCK_ALERTES.find((m) => m.id === params.id);
+      if (actif) {
+        if (!mock) {
+          setErreur("Fiche introuvable.");
+        } else {
+          const socle = simulerAnalyseAlerte({
+            fileName: `${mock.numeroOrdre}.pdf`,
+            fileType: "application/pdf",
+            fileSize: 0,
+          }).analyse;
+          setForm({
+            ...socle,
+            numeroOrdre: mock.numeroOrdre,
+            natureTexte: mock.natureTexte,
+            referenceTexte: mock.referenceTexte,
+            resumeTexte: mock.resumeTexte,
+            dateEntreeVigueur: mock.dateEntreeVigueur,
+            departementResponsable: mock.departement,
+            statutConformite: mock.statut,
+            tauxAvancement: mock.tauxAvancement,
+          });
+          setDemo(true);
+        }
+        setChargement(false);
+      }
+      return () => {
+        actif = false;
+      };
+    }
+
     fetch(`/api/veille/${params.id}`)
       .then(async (r) => {
         const payload = (await r.json()) as {
@@ -125,6 +162,17 @@ export default function ModifierAlertePage() {
     setSaving(true);
     setErreur(null);
     setNoteResp(false);
+    // Démonstration : mise à jour simulée puis retour tableau de bord.
+    if (demo) {
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      try {
+        sessionStorage.setItem("juriscan-saved", form.numeroOrdre);
+      } catch {
+        /* stockage indisponible : redirection quand même */
+      }
+      router.push("/dashboard");
+      return;
+    }
     try {
       const reponse = await fetch(`/api/veille/${params.id}`, {
         method: "PUT",
@@ -141,6 +189,11 @@ export default function ModifierAlertePage() {
         return;
       }
       if (payload.responsableNonLie) setNoteResp(true);
+      try {
+        sessionStorage.setItem("juriscan-saved", form.numeroOrdre);
+      } catch {
+        /* stockage indisponible : redirection quand même */
+      }
       router.push("/dashboard");
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'enregistrement.");
@@ -199,8 +252,15 @@ export default function ModifierAlertePage() {
               <h2 className="text-base font-bold text-white">
                 Fiche — 21 colonnes modifiables
               </h2>
-              <span className="rounded-full bg-brand-gold px-3 py-1 font-mono text-xs font-bold text-brand-blue">
-                {form.numeroOrdre}
+              <span className="flex flex-wrap items-center gap-2">
+                {demo && (
+                  <span className="rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold text-white">
+                    Mode démonstration
+                  </span>
+                )}
+                <span className="rounded-full bg-brand-gold px-3 py-1 font-mono text-xs font-bold text-brand-blue">
+                  {form.numeroOrdre}
+                </span>
               </span>
             </div>
 

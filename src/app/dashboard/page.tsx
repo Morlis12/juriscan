@@ -82,6 +82,20 @@ export default function DashboardPage() {
   const [now, setNow] = useState<Date | null>(null);
   const [dbAlertes, setDbAlertes] = useState<MockAlerte[]>([]);
   const [dbActions, setDbActions] = useState<MockAction[]>([]);
+  const [confirmation, setConfirmation] = useState<string | null>(null);
+
+  // Message de succès après enregistrement / modification d'une fiche.
+  useEffect(() => {
+    try {
+      const numero = sessionStorage.getItem("juriscan-saved");
+      if (numero) {
+        setConfirmation(numero);
+        sessionStorage.removeItem("juriscan-saved");
+      }
+    } catch {
+      /* stockage indisponible : pas de bannière */
+    }
+  }, []);
 
   useEffect(() => {
     setNow(new Date());
@@ -255,6 +269,20 @@ export default function DashboardPage() {
             ➕ Nouvelle Alerte
           </Link>
         </div>
+
+        {confirmation && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-sm">
+            <span>✅ Fiche {confirmation} enregistrée avec succès.</span>
+            <button
+              type="button"
+              onClick={() => setConfirmation(null)}
+              className="rounded-full px-2 py-0.5 text-emerald-700 hover:bg-emerald-100"
+              aria-label="Fermer la confirmation"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {/* CARTES KPI */}
         <section className="grid gap-4 sm:grid-cols-3">
