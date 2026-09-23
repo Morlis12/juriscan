@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
-  simulerAnalyseAlerte,
+  creerAlerteVierge,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
 import { MOCK_ALERTES } from "@/data/veille-mock";
@@ -79,11 +79,7 @@ export default function ModifierAlertePage() {
         if (!mock) {
           setErreur("Fiche introuvable.");
         } else {
-          const socle = simulerAnalyseAlerte({
-            fileName: `${mock.numeroOrdre}.pdf`,
-            fileType: "application/pdf",
-            fileSize: 0,
-          }).analyse;
+          const socle = creerAlerteVierge();
           setForm({
             ...socle,
             numeroOrdre: mock.numeroOrdre,

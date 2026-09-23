@@ -8,7 +8,6 @@ import { CONFORMITE_STATUTS, DEPARTEMENT_CODES } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
   creerAlerteVierge,
-  simulerAnalyseAlerte,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
 
@@ -140,12 +139,8 @@ export default function NouvelleAlertePage() {
         return;
       }
       const data = payload.data;
-      // Fusion : les champs extraits (JO CI 9 juillet 2026) + socle local = 21 colonnes.
-      const socle = simulerAnalyseAlerte({
-        fileName: file.name,
-        fileType: mimeType,
-        fileSize: file.size,
-      }).analyse;
+      // Zéro mock : champs IA réels + base vierge = 21 colonnes à compléter.
+      const socle = creerAlerteVierge();
       const departement = (DEPARTEMENT_CODES as string[]).includes(data.departement ?? "")
         ? (data.departement as DepartementCode)
         : socle.departementResponsable;
