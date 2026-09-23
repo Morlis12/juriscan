@@ -1,0 +1,95 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// 1. LES ACTEURS & DÉPARTEMENTS (Correspond aux onglets du fichier)
+enum DepartementCode {
+  CENTRAL_VRG // Veille Réglementaire Générale
+  DJ // Direction Juridique
+  DAF // Direction Administrative et Financière
+  DRH // Direction des Ressources Humaines
+  PATR_IMMO // Patrimoine Immobilier / Gestion Immobilière
+  DQHSE // Direction Qualité, Hygiène, Sécurité, Environnement
+  DIR_COMM_MARK // Direction Commerciale & Marketing
+  DILS // Direction de l'Immobilier, de la Logistique et des Services
+}
+
+model User {
+  id       String          @id @default(uuid())
+  email    String          @unique
+  firstName String
+  lastName String
+  departement DepartementCode @default(CENTRAL_VRG)
+  createdAt DateTime        @default(now())
+
+  // Relations
+  actionsAssignees VeilleAction[] @relation("ResponsableAction")
+}
+
+// 2. CONFIGURATION DU STATUT DE CONFORMITÉ (Liste d'options Excel)
+enum ConformiteStatut {
+  CONFORME_100
+  NON_CONFORME_0
+  PARTIELLEMENT_25
+  PARTIELLEMENT_50
+  PARTIELLEMENT_75
+}
+
+// 3. TABLE MAÎTRESSE : L'ALERTE DE VEILLE (Centralise les colonnes métiers)
+model VeilleAlerte {
+  id                 String    @id @default(uuid())
+  numeroOrdre        String    @unique // N° Ordre
+  qssfte             String? // QSSTE
+  natureTexte        String // Nature du Texte (ex: Décret, Arrêté)
+  referenceTexte     String // Référence du texte
+  article            String? // Article
+  resumeTexte        String    @db.Text // Résumé_texte (Généré par l'IA)
+  libelleApplicable  String    @db.Text // Libellé du texte applicable et version en vigueur
+  lienHypertexte     String? // Lien hypertexte (Lien officiel ou Vercel Blob du PDF)
+  dateEntreeVigueur  DateTime? // Date d'entrée en vigueur
+  contenu            String    @db.Text // Contenu brut extrait du PDF ou de l'image
+  moyenCommunication String? // Moyen de communication [Interne/Externe]
+  applicableA_AGL_CI Boolean   @default(true) // Applicable à AGL CI
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  // Relations
+  fichesDepartements VeilleFiche[] // Déclinaison de l'alerte par département
+}
+
+// 4. LA DÉCLINAISON PAR ONGLET DE DIRECTION (Gère le traitement de conformité)
+model VeilleFiche {
+  id                String           @id @default(uuid())
+  alerteId          String
+  departement       DepartementCode // Identifie à quelle feuille direction cette ligne appartient
+  actionsExistantes String?          @db.Text // Actions conformité existantes
+  preuvesExistantes String?          @db.Text // Preuves de conformité existantes
+  statutConformite  ConformiteStatut @default(NON_CONFORME_0) // Statut options
+  preuveDifferee    String?          @db.Text // Preuve de conformité différée
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  // Relations
+  alerte              VeilleAlerte   @relation(fields: [alerteId], references: [id], onDelete: Cascade)
+  actionsAmelioration VeilleAction[] // Les lignes d'actions d'améliorations rattachées
+}
+
+// 5. SUIVI DES ACTIONS D'AMÉLIORATION (Délai, Taux, Resp)
+model VeilleAction {
+  id              String    @id @default(uuid())
+  ficheId         String
+  libelleAction   String    @db.Text // Actions d'améliorations en vue de la conformité
+  responsableId   String? // Resp. des actions de mise en conformité
+  delai           DateTime? // Délai
+  tauxAvancement  Float     @default(0.0) // Taux d'avancement (%)
+  createdAt       DateTime  @default(now())
+
+  // Relations
+  fiche       VeilleFiche @relation(fields: [ficheId], references: [id], onDelete: Cascade)
+  responsable User?       @relation("ResponsableAction", fields: [responsableId], references: [id])
+}
