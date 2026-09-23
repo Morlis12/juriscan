@@ -1,0 +1,379 @@
+"use client";
+
+import { useEffect, useState } from "react";
+import Link from "next/link";
+import { useParams, useRouter } from "next/navigation";
+import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
+import {
+  DEPARTEMENT_OPTIONS,
+  type AlerteAnalyse21,
+} from "@/domain/nouvelle-alerte";
+
+/**
+ * JuriScan AI — Modification d'une fiche enregistrée (21 colonnes).
+ * GET /api/veille/[id] (findUnique) → formulaire → PUT → /dashboard.
+ * Les lignes `mock-*` sont des démos non persistées : édition désactivée.
+ */
+
+const STATUTS = [
+  { code: "NON_CONFORME_0", label: "Non Conforme (0 %)" },
+  { code: "PARTIELLEMENT_25", label: "Partiellement Conforme (25 %)" },
+  { code: "PARTIELLEMENT_50", label: "Partiellement Conforme (50 %)" },
+  { code: "PARTIELLEMENT_75", label: "Partiellement Conforme (75 %)" },
+  { code: "CONFORME_100", label: "Conforme (100 %)" },
+] as const;
+
+interface ApiGetData {
+  alerte: {
+    numeroOrdre: string;
+    qssfte: string | null;
+    natureTexte: string;
+    referenceTexte: string;
+    article: string | null;
+    resumeTexte: string;
+    libelleApplicable: string;
+    lienHypertexte: string | null;
+    dateEntreeVigueur: string | null;
+    contenu: string;
+    moyenCommunication: string | null;
+    applicableA_AGL_CI: boolean;
+  };
+  fiche: {
+    departement: DepartementCode;
+    actionsExistantes: string | null;
+    preuvesExistantes: string | null;
+    statutConformite: ConformiteStatut;
+    preuveDifferee: string | null;
+  };
+  action: {
+    id: string;
+    libelleAction: string;
+    delai: string | null;
+    tauxAvancement: number;
+  } | null;
+}
+
+const isoJour = (v: string | null): string => (v ?? "").slice(0, 10);
+
+export default function ModifierAlertePage() {
+  const params = useParams<{ id: string }>();
+  const router = useRouter();
+  const [form, setForm] = useState<AlerteAnalyse21 | null>(null);
+  const [actionId, setActionId] = useState<string | null>(null);
+  const [chargement, setChargement] = useState(true);
+  const [erreur, setErreur] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [noteResp, setNoteResp] = useState(false);
+
+  useEffect(() => {
+    let actif = true;
+    fetch(`/api/veille/${params.id}`)
+      .then(async (r) => {
+        const payload = (await r.json()) as {
+          success?: boolean;
+          data?: ApiGetData;
+          error?: string;
+        };
+        if (!actif) return;
+        if (!r.ok || !payload.success || !payload.data) {
+          setErreur(payload.error ?? "Fiche introuvable.");
+          return;
+        }
+        const { alerte, fiche, action } = payload.data;
+        setForm({
+          numeroOrdre: alerte.numeroOrdre,
+          qssfte: alerte.qssfte ?? "",
+          natureTexte: alerte.natureTexte,
+          referenceTexte: alerte.referenceTexte,
+          article: alerte.article ?? "",
+          resumeTexte: alerte.resumeTexte,
+          libelleApplicable: alerte.libelleApplicable,
+          lienHypertexte: alerte.lienHypertexte ?? "",
+          dateEntreeVigueur: isoJour(alerte.dateEntreeVigueur),
+          contenu: alerte.contenu,
+          moyenCommunication: alerte.moyenCommunication ?? "",
+          applicableAGLCI: alerte.applicableA_AGL_CI,
+          departementResponsable: fiche.departement,
+          actionsExistantes: fiche.actionsExistantes ?? "",
+          preuvesExistantes: fiche.preuvesExistantes ?? "",
+          statutConformite: fiche.statutConformite,
+          preuveDifferee: fiche.preuveDifferee ?? "",
+          libelleAction: action?.libelleAction ?? "",
+          responsable: "",
+          delai: isoJour(action?.delai ?? null),
+          tauxAvancement: action ? Math.round(action.tauxAvancement) : 0,
+        });
+        setActionId(action?.id ?? null);
+      })
+      .catch(() => {
+        if (actif) setErreur("Impossible de charger la fiche.");
+      })
+      .finally(() => {
+        if (actif) setChargement(false);
+      });
+    return () => {
+      actif = false;
+    };
+  }, [params.id]);
+
+  function set<K extends keyof AlerteAnalyse21>(key: K, value: AlerteAnalyse21[K]) {
+    setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
+  }
+
+  async function enregistrer() {
+    if (!form) return;
+    setSaving(true);
+    setErreur(null);
+    setNoteResp(false);
+    try {
+      const reponse = await fetch(`/api/veille/${params.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, actionId }),
+      });
+      const payload = (await reponse.json()) as {
+        success?: boolean;
+        responsableNonLie?: boolean;
+        error?: string;
+      };
+      if (!reponse.ok || !payload.success) {
+        setErreur(payload.error ?? "Échec de l'enregistrement.");
+        return;
+      }
+      if (payload.responsableNonLie) setNoteResp(true);
+      router.push("/dashboard");
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : "Échec de l'enregistrement.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100">
+      <header className="sticky top-0 z-50 bg-brand-blue text-white shadow-md">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-gold text-sm font-black text-brand-blue">
+              AGL
+            </div>
+            <div>
+              <p className="text-lg font-bold leading-tight">Modifier la fiche — JuriScan AI</p>
+              <p className="font-mono text-xs text-slate-300">{params.id}</p>
+            </div>
+          </div>
+          <Link
+            href="/dashboard"
+            className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
+          >
+            ← Retour tableau de bord
+          </Link>
+        </div>
+      </header>
+
+      <main className="mx-auto max-w-5xl space-y-6 px-4 py-6">
+        {chargement && (
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+            <div className="mx-auto h-2 w-48 overflow-hidden rounded-full bg-slate-200">
+              <div className="h-full w-1/2 animate-pulse rounded-full bg-brand-gold" />
+            </div>
+            <p className="mt-3 text-sm text-slate-500">Chargement des 21 colonnes…</p>
+          </div>
+        )}
+
+        {erreur && !form && !chargement && (
+          <div className="rounded-xl border border-slate-200 bg-white p-10 text-center shadow-sm">
+            <p className="text-sm font-semibold text-brand-blue">{erreur}</p>
+            <Link
+              href="/dashboard"
+              className="mt-4 inline-block rounded-lg border border-brand-gold bg-brand-blue px-4 py-2 text-sm font-semibold text-white"
+            >
+              ← Retour tableau de bord
+            </Link>
+          </div>
+        )}
+
+        {form && (
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-brand-blue px-5 py-3">
+              <h2 className="text-base font-bold text-white">
+                Fiche — 21 colonnes modifiables
+              </h2>
+              <span className="rounded-full bg-brand-gold px-3 py-1 font-mono text-xs font-bold text-brand-blue">
+                {form.numeroOrdre}
+              </span>
+            </div>
+
+            <div className="space-y-6 px-5 py-5">
+              {erreur && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{erreur}</p>
+              )}
+              {noteResp && (
+                <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                  Responsable non rattaché (aucun User avec cet email) — autres champs enregistrés.
+                </p>
+              )}
+
+              <Bloc titre="Alerte — texte source (12 champs)">
+                <Champ label="01 · N° d'ordre" value={form.numeroOrdre} onChange={(v) => set("numeroOrdre", v)} mono />
+                <Champ label="02 · QSSTE" value={form.qssfte} onChange={(v) => set("qssfte", v)} mono />
+                <Champ label="03 · Nature du texte" value={form.natureTexte} onChange={(v) => set("natureTexte", v)} />
+                <Champ label="04 · Référence du texte" value={form.referenceTexte} onChange={(v) => set("referenceTexte", v)} />
+                <Champ label="05 · Article" value={form.article} onChange={(v) => set("article", v)} />
+                <Zone label="06 · Résumé du texte" value={form.resumeTexte} onChange={(v) => set("resumeTexte", v)} />
+                <Zone label="07 · Libellé / texte applicable en vigueur" value={form.libelleApplicable} onChange={(v) => set("libelleApplicable", v)} />
+                <Champ label="08 · Lien hypertexte" value={form.lienHypertexte} onChange={(v) => set("lienHypertexte", v)} mono />
+                <Champ label="09 · Date d'entrée en vigueur" type="date" value={form.dateEntreeVigueur} onChange={(v) => set("dateEntreeVigueur", v)} />
+                <Zone label="10 · Contenu brut extrait" value={form.contenu} onChange={(v) => set("contenu", v)} compact />
+                <Champ label="11 · Moyen de communication" value={form.moyenCommunication} onChange={(v) => set("moyenCommunication", v)} />
+                <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <input
+                    type="checkbox"
+                    checked={form.applicableAGLCI}
+                    onChange={(e) => set("applicableAGLCI", e.target.checked)}
+                    className="h-4 w-4 accent-[#1C3359]"
+                  />
+                  <span>
+                    <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                      12 · Applicable à AGL CI
+                    </span>
+                    <span className="font-medium text-slate-800">{form.applicableAGLCI ? "Oui" : "Non"}</span>
+                  </span>
+                </label>
+              </Bloc>
+
+              <Bloc titre="Fiche — assignation département (5 champs)">
+                <label className="block rounded-lg border-2 border-brand-gold/60 bg-brand-gold/10 px-3 py-2 text-sm">
+                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                    13 · Département responsable *
+                  </span>
+                  <select
+                    value={form.departementResponsable}
+                    onChange={(e) => set("departementResponsable", e.target.value as DepartementCode)}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue"
+                  >
+                    {DEPARTEMENT_OPTIONS.map((d) => (
+                      <option key={d.code} value={d.code}>
+                        {d.code === "PATR_IMMO" ? "Patr Immo" : d.code} — {d.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Zone label="14 · Actions conformité existantes" value={form.actionsExistantes} onChange={(v) => set("actionsExistantes", v)} compact />
+                <Zone label="15 · Preuves de conformité existantes" value={form.preuvesExistantes} onChange={(v) => set("preuvesExistantes", v)} compact />
+                <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    16 · Statut de conformité
+                  </span>
+                  <select
+                    value={form.statutConformite}
+                    onChange={(e) => set("statutConformite", e.target.value as AlerteAnalyse21["statutConformite"])}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+                  >
+                    {STATUTS.map((s) => (
+                      <option key={s.code} value={s.code}>
+                        {s.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <Zone label="17 · Preuve de conformité différée" value={form.preuveDifferee} onChange={(v) => set("preuveDifferee", v)} compact />
+              </Bloc>
+
+              <Bloc titre="Action d'amélioration (4 champs)">
+                <Zone label="18 · Action d'amélioration" value={form.libelleAction} onChange={(v) => set("libelleAction", v)} compact />
+                <Champ
+                  label="19 · Responsable (email d'un User existant pour rattacher)"
+                  value={form.responsable}
+                  onChange={(v) => set("responsable", v)}
+                />
+                <Champ label="20 · Délai" type="date" value={form.delai} onChange={(v) => set("delai", v)} />
+                <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    21 · Taux d&apos;avancement — {form.tauxAvancement} %
+                  </span>
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={form.tauxAvancement}
+                    onChange={(e) => set("tauxAvancement", Number(e.target.value))}
+                    className="w-full accent-[#1C3359]"
+                  />
+                </label>
+              </Bloc>
+
+              <button
+                type="button"
+                onClick={enregistrer}
+                disabled={saving}
+                className="w-full rounded-xl bg-brand-blue px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-brand-blue/90 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Enregistrement en cours…" : "💾 Enregistrer les Modifications"}
+              </button>
+            </div>
+          </section>
+        )}
+      </main>
+    </div>
+  );
+}
+
+function Bloc({ titre, children }: { titre: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="space-y-3 rounded-xl border border-slate-200 p-4">
+      <legend className="bg-white px-2 text-xs font-bold uppercase tracking-wide text-brand-blue">{titre}</legend>
+      <div className="grid gap-3 sm:grid-cols-2">{children}</div>
+    </fieldset>
+  );
+}
+
+function Champ({
+  label,
+  value,
+  onChange,
+  type = "text",
+  mono = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  type?: string;
+  mono?: boolean;
+}) {
+  return (
+    <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={`w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white ${mono ? "font-mono text-xs" : ""}`}
+      />
+    </label>
+  );
+}
+
+function Zone({
+  label,
+  value,
+  onChange,
+  compact = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  compact?: boolean;
+}) {
+  return (
+    <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm sm:col-span-2">
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+      <textarea
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        rows={compact ? 2 : 3}
+        className="w-full resize-y rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white"
+      />
+    </label>
+  );
+}

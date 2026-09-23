@@ -49,6 +49,25 @@ function dateOuNull(v: unknown): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * Identifiant de route d'une fiche : `db-<alerteId>-<ficheId>` (uuid v4 de
+ * 36 caractères chacun). Les lignes `mock-*` du tableau de bord sont des
+ * données de démonstration non persistées → null.
+ */
+export function parseFicheRouteId(
+  routeId: string,
+): { alerteId: string; ficheId: string } | null {
+  if (!routeId.startsWith("db-")) return null;
+  const rest = routeId.slice(3);
+  if (rest.length < 73) return null;
+  const alerteId = rest.slice(0, 36);
+  if (rest[36] !== "-") return null;
+  const ficheId = rest.slice(37);
+  const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  if (!uuid.test(alerteId) || !uuid.test(ficheId)) return null;
+  return { alerteId, ficheId };
+}
+
 export async function creerFicheVeille(b: FicheVeillePayload) {
   const numeroOrdre = chaine(b.numeroOrdre).trim();
   const natureTexte = chaine(b.natureTexte).trim();

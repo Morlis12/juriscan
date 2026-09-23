@@ -344,7 +344,13 @@ export default function DashboardPage() {
                     className="border-t border-slate-100 hover:bg-slate-50"
                   >
                     <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-brand-blue">
-                      {a.numeroOrdre}
+                      <Link
+                        href={`/dashboard/alertes/${a.id}`}
+                        title="Modifier la fiche"
+                        className="rounded px-1 py-0.5 underline decoration-brand-gold decoration-2 underline-offset-2 hover:bg-brand-blue hover:text-white"
+                      >
+                        {a.numeroOrdre}
+                      </Link>
                     </td>
                     <td className="px-4 py-3">
                       <span className="mb-1 inline-block rounded bg-brand-blue/10 px-1.5 py-0.5 text-[11px] font-semibold text-brand-blue">
