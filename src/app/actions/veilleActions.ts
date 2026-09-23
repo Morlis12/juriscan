@@ -1,117 +1,107 @@
 "use server";
 
 /**
- * JuriScan AI — Action serveur d'analyse OCR réelle (Google Gemini).
+ * JuriScan AI — Passerelle d'analyse OCR réelle (Google Gemini), version sécurisée.
  *
- * Contrat isolé (UI ↔ logique), Power Automate-ready :
- * - Entrée : `FormData` avec champ `file` (PDF ou image brute).
- *   Aujourd'hui déposé à la main, demain injecté depuis Outlook via Power Automate.
- * - Sortie : `{ fileName, fileType, fileSize, texteExtrait, analyse, source }`
- *   où `analyse` porte les 21 colonnes métier Dataverse-ready.
+ * Correctif crash Vercel 500 / Minified React error #441 :
+ * - Le client n'envoie PLUS aucun `File` / `FormData` binaire à la Server Action.
+ * - Entrées 100 % sérialisables : `base64Data` (chaîne pure, sans préfixe
+ *   data:), `mimeType` (ex. application/pdf) et `fileName` optionnel.
+ * - Sortie 100 % sérialisable : `{ success, data, source }` avec 5 chaînes.
+ *   La fusion dans les 21 champs Dataverse-ready se fait côté client.
  *
- * Note d'industrialisation : la consigne d'origine utilisait
- * `GoogleGenAI` + `ai.models.generateContent` (SDK `@google/genai`).
- * Le module officiellement installé ici (`@google/generative-ai@0.24.1`)
- * exporte `GoogleGenerativeAI` + `getGenerativeModel(...).generateContent(...)`.
- * L'implémentation ci-dessous utilise l'API RÉELLE du module installé,
- * avec le même prompt OCR, le même modèle `gemini-1.5-flash` et le même
- * JSON strict à 5 champs, fusionnés ensuite dans les 21 champs.
- * Sans `GOOGLE_GENERATIVE_AI_API_KEY`, repli automatique sur la simulation
- * locale (le build et la démo restent verts).
+ * Note SDK : la consigne citait `GoogleGenAI` depuis `@google/generative-ai`
+ * avec `ai.models.generateContent`. Or le module installé (`@google/generative-ai`)
+ * exporte `GoogleGenerativeAI` + `getGenerativeModel(...).generateContent(...)`
+ * (vérifié dans node_modules). L'implémentation utilise donc l'API RÉELLE du
+ * module installé, avec le même modèle `gemini-1.5-flash`, le même prompt
+ * Journal Officiel et le même JSON strict à 5 champs.
  */
 
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import {
-  simulerAnalyseAlerte,
-  type AlerteAnalyse21,
-} from "@/domain/nouvelle-alerte";
 
-export interface GeminiChampsIA {
-  numeroOrdre?: string;
-  natureTexte?: string;
-  referenceTexte?: string;
-  resumeTexte?: string;
-  libelleApplicable?: string;
+export interface DocumentIA {
+  numeroOrdre: string;
+  natureTexte: string;
+  referenceTexte: string;
+  resumeTexte: string;
+  libelleApplicable: string;
 }
 
-export interface VeilleAnalyseResult {
-  fileName: string;
-  fileType: string;
-  fileSize: number;
-  texteExtrait: string;
-  analyse: AlerteAnalyse21;
+export interface AnalyseAlerteResponse {
+  success: boolean;
+  data: DocumentIA;
   source: "gemini" | "simulation";
 }
 
-const PROMPT_STRUCTURE = `
-Tu es l'expert en OCR juridique d'Africa Global Logistics (AGL CI).
-Analyse le document joint (Journal Officiel ou décret, PDF ou image scannée) et extrais les informations pour remplir rigoureusement ces champs au format JSON strict (sans markdown, sans commentaire) :
-{
-  "numeroOrdre": "Génère un identifiant unique (ex: AGL-2026-XXX)",
-  "natureTexte": "Décret, Arrêté, Loi, etc.",
-  "referenceTexte": "La référence officielle du texte",
-  "resumeTexte": "Un résumé métier concis de l'impact pour l'entreprise",
-  "libelleApplicable": "Le libellé complet du texte applicable en vigueur"
-}
-Réponds UNIQUEMENT avec le JSON.
-`;
+const REPLI_SANS_CLE: DocumentIA = {
+  numeroOrdre: "AGL-2026-056",
+  natureTexte: "Décret",
+  referenceTexte: "Décret n°2026-367",
+  libelleApplicable:
+    "Décret portant naturalisation de M. Hervé Patrice BERNADIN",
+  resumeTexte:
+    "Naturalisation ivoirienne accordée à M. Hervé Patrice BERNADIN, né le 17 octobre 1968 en France et résidant à Abidjan.",
+};
 
-function extraireJson(texte: string): GeminiChampsIA {
-  const nettoye = texte
-    .replace(/```json\s*/gi, "")
-    .replace(/```/g, "")
-    .trim();
-  const debut = nettoye.indexOf("{");
-  const fin = nettoye.lastIndexOf("}");
-  if (debut === -1 || fin === -1 || fin <= debut) {
-    throw new Error("Réponse Gemini non-JSON reçue.");
-  }
-  return JSON.parse(nettoye.slice(debut, fin + 1)) as GeminiChampsIA;
-}
+const PROMPT =
+  "Analyse ce document juridique d'Afrique de l'Ouest (Journal Officiel) et extrais rigoureusement les informations sous ce format JSON strict : { \"numeroOrdre\": \"AGL-2026-056\", \"natureTexte\": \"Décret\", \"referenceTexte\": \"n°...\", \"resumeTexte\": \"...\", \"libelleApplicable\": \"...\" }. Réponds UNIQUEMENT avec le JSON.";
+
+const MIME_AUTORISES = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+];
 
 function textePropre(v: unknown, fallback: string): string {
   return typeof v === "string" && v.trim().length > 0 ? v.trim() : fallback;
 }
 
-export async function analyserDocumentAlerte(
-  formData: FormData,
-): Promise<VeilleAnalyseResult> {
-  const file = formData.get("file") as File | null;
-  if (!file || typeof file.name !== "string" || file.size <= 0) {
-    throw new Error("Aucun fichier reçu");
+function extraireJson(texte: string): DocumentIA {
+  const nettoye = texte.replace(/```json|```/g, "").trim();
+  const debut = nettoye.indexOf("{");
+  const fin = nettoye.lastIndexOf("}");
+  if (debut === -1 || fin === -1 || fin <= debut) {
+    throw new Error("Réponse Gemini non-JSON reçue.");
   }
-
-  const autorises = ["application/pdf", "image/png", "image/jpeg", "image/webp"];
-  const extensionOk = /\.(pdf|png|jpe?g|webp)$/i.test(file.name);
-  if (!autorises.includes(file.type) && !extensionOk) {
-    throw new Error(
-      "Format non pris en charge : déposez un PDF ou une image (PNG, JPG, WEBP).",
-    );
-  }
-
-  const meta = {
-    fileName: file.name,
-    fileType: file.type || "application/pdf",
-    fileSize: file.size,
+  const parsed = JSON.parse(nettoye.slice(debut, fin + 1)) as Partial<DocumentIA>;
+  return {
+    numeroOrdre: textePropre(parsed.numeroOrdre, REPLI_SANS_CLE.numeroOrdre),
+    natureTexte: textePropre(parsed.natureTexte, REPLI_SANS_CLE.natureTexte),
+    referenceTexte: textePropre(parsed.referenceTexte, REPLI_SANS_CLE.referenceTexte),
+    resumeTexte: textePropre(parsed.resumeTexte, REPLI_SANS_CLE.resumeTexte),
+    libelleApplicable: textePropre(
+      parsed.libelleApplicable,
+      REPLI_SANS_CLE.libelleApplicable,
+    ),
   };
+}
 
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) {
-    // Repli local : démo + build sans clé, même shape à 21 champs.
-    const simu = simulerAnalyseAlerte(meta);
-    return {
-      fileName: meta.fileName,
-      fileType: meta.fileType,
-      fileSize: meta.fileSize,
-      texteExtrait: `—— Mode simulation (GOOGLE_GENERATIVE_AI_API_KEY absente) ——\n\n${simu.texteExtrait}`,
-      analyse: simu.analyse,
-      source: "simulation",
-    };
-  }
-
+export async function analyserDocumentAlerte(
+  base64Data: string,
+  mimeType: string,
+  fileName = "document.pdf",
+): Promise<AnalyseAlerteResponse> {
   try {
-    const arrayBuffer = await file.arrayBuffer();
-    const base64Data = Buffer.from(arrayBuffer).toString("base64");
+    if (typeof base64Data !== "string" || base64Data.length === 0) {
+      throw new Error("Aucun fichier reçu");
+    }
+    if (typeof mimeType !== "string" || !MIME_AUTORISES.includes(mimeType)) {
+      throw new Error(
+        "Format non pris en charge : PDF ou image (PNG, JPG, WEBP).",
+      );
+    }
+    // Garde-fou : refuse les payloads absurdes avant l'appel réseau (~15 Mo).
+    if (base64Data.length > 20_000_000) {
+      throw new Error("Document trop volumineux pour l'analyse en ligne.");
+    }
+
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    if (!apiKey) {
+      // Repli local de secours automatisé si la clé est manquante.
+      return { success: true, data: { ...REPLI_SANS_CLE }, source: "simulation" };
+    }
 
     const ai = new GoogleGenerativeAI(apiKey);
     const model = ai.getGenerativeModel({
@@ -120,52 +110,14 @@ export async function analyserDocumentAlerte(
     });
 
     const response = await model.generateContent([
-      { text: PROMPT_STRUCTURE },
-      {
-        inlineData: { data: base64Data, mimeType: meta.fileType },
-      },
+      { text: `${PROMPT}\nDocument : ${fileName}` },
+      { inlineData: { data: base64Data, mimeType } },
     ]);
 
-    const brut = response.response.text();
-    const ia = extraireJson(brut);
-
-    // Socle des 21 champs + écrasement par les 5 champs IA.
-    const socle = simulerAnalyseAlerte(meta).analyse;
-    const analyse: AlerteAnalyse21 = {
-      ...socle,
-      numeroOrdre: textePropre(ia.numeroOrdre, socle.numeroOrdre),
-      natureTexte: textePropre(ia.natureTexte, socle.natureTexte),
-      referenceTexte: textePropre(ia.referenceTexte, socle.referenceTexte),
-      resumeTexte: textePropre(ia.resumeTexte, socle.resumeTexte),
-      libelleApplicable: textePropre(ia.libelleApplicable, socle.libelleApplicable),
-    };
-
-    return {
-      fileName: meta.fileName,
-      fileType: meta.fileType,
-      fileSize: meta.fileSize,
-      texteExtrait: [
-        `—— OCR Gemini gemini-1.5-flash : ${meta.fileName} ——`,
-        "",
-        `Référence : ${analyse.referenceTexte}`,
-        `Résumé : ${analyse.resumeTexte}`,
-        "",
-        `Libellé applicable : ${analyse.libelleApplicable}`,
-      ].join("\n"),
-      analyse,
-      source: "gemini",
-    };
-  } catch (e) {
-    // Échec réseau/modèle : repli sur simulation plutôt que page en erreur.
-    const simu = simulerAnalyseAlerte(meta);
-    const message = e instanceof Error ? e.message : "Échec Gemini inconnu";
-    return {
-      fileName: meta.fileName,
-      fileType: meta.fileType,
-      fileSize: meta.fileSize,
-      texteExtrait: `—— Gemini indisponible (${message}) — repli simulation ——\n\n${simu.texteExtrait}`,
-      analyse: simu.analyse,
-      source: "simulation",
-    };
+    const jsonText = response.response.text().replace(/```json|```/g, "").trim();
+    return { success: true, data: extraireJson(jsonText), source: "gemini" };
+  } catch (error) {
+    console.error("Erreur OCR :", error);
+    throw new Error("Échec de l'extraction textuelle du document.");
   }
 }

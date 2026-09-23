@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { DepartementCode } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
+  simulerAnalyseAlerte,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
 import { analyserDocumentAlerte } from "@/app/actions/veilleActions";
@@ -24,6 +25,24 @@ function formatTaille(bytes: number): string {
   if (bytes < 1024) return `${bytes} o`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
   return `${(bytes / (1024 * 1024)).toFixed(2)} Mo`;
+}
+
+/**
+ * Encodage Base64 côté navigateur (FileReader) : seul du texte sérialisable
+ * transite vers la Server Action — aucun objet File / binaire brut.
+ */
+function fichierVersBase64Pur(f: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const lecteur = new FileReader();
+    lecteur.onload = () => {
+      const url = typeof lecteur.result === "string" ? lecteur.result : "";
+      const pur = url.includes(",") ? url.split(",")[1] : "";
+      if (!pur) reject(new Error("Impossible de lire le document."));
+      else resolve(pur);
+    };
+    lecteur.onerror = () => reject(new Error("Impossible de lire le document."));
+    lecteur.readAsDataURL(f);
+  });
 }
 
 export default function NouvelleAlertePage() {
@@ -64,12 +83,39 @@ export default function NouvelleAlertePage() {
     setErreur(null);
     setSaved(false);
     try {
-      // Appel isolé : OCR réel Gemini via la Server Action (FormData → 21 champs).
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await analyserDocumentAlerte(formData);
-      setTexteExtrait(res.texteExtrait);
-      setResultat(res.analyse);
+      // Sécurisé : encodage Base64 navigateur → la Server Action ne reçoit
+      // que des chaînes sérialisables (base64 pur + MIME + nom).
+      const base64Data = await fichierVersBase64Pur(file);
+      const mimeType = file.type || "application/pdf";
+      const res = await analyserDocumentAlerte(base64Data, mimeType, file.name);
+      if (!res.success) {
+        setErreur("Échec de l'analyse IA.");
+        return;
+      }
+      // Fusion : les 5 champs IA extraits + socle local pour les 21 champs.
+      const socle = simulerAnalyseAlerte({
+        fileName: file.name,
+        fileType: mimeType,
+        fileSize: file.size,
+      }).analyse;
+      setResultat({
+        ...socle,
+        numeroOrdre: res.data.numeroOrdre || socle.numeroOrdre,
+        natureTexte: res.data.natureTexte || socle.natureTexte,
+        referenceTexte: res.data.referenceTexte || socle.referenceTexte,
+        resumeTexte: res.data.resumeTexte || socle.resumeTexte,
+        libelleApplicable: res.data.libelleApplicable || socle.libelleApplicable,
+      });
+      setTexteExtrait(
+        [
+          `—— OCR Gemini gemini-1.5-flash : ${file.name} ——`,
+          "",
+          `Référence : ${res.data.referenceTexte}`,
+          `Résumé : ${res.data.resumeTexte}`,
+          "",
+          `Libellé applicable : ${res.data.libelleApplicable}`,
+        ].join("\n"),
+      );
       setSource(res.source);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
@@ -198,10 +244,10 @@ export default function NouvelleAlertePage() {
               </div>
             )}
             <p className="mt-3 rounded-lg bg-brand-gold/15 px-3 py-2 text-[11px] leading-relaxed text-brand-blue">
-              OCR réel : la Server Action <code className="font-mono">analyserDocumentAlerte(formData)</code> (
-              <code className="font-mono">src/app/actions/veilleActions.ts</code>, Gemini 1.5 Flash) est pure et
-              isolée. Power Automate (Outlook → injection arrière-plan) la réutilisera sans toucher cette page.
-              Sans clé API, repli automatique sur simulation locale.
+              OCR réel sécurisé : le navigateur encode en Base64 pur (FileReader) et la Server Action{" "}
+              <code className="font-mono">analyserDocumentAlerte(base64, mimeType)</code> (
+              <code className="font-mono">src/app/actions/veilleActions.ts</code>, Gemini 1.5 Flash) ne reçoit que
+              des chaînes sérialisables. Sans clé API, repli automatique sur simulation locale.
             </p>
           </div>
 

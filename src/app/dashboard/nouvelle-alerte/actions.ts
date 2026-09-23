@@ -1,27 +1,19 @@
 "use server";
 
 /**
- * JuriScan AI — Compatibilité d'appel locale (wrapper fin).
+ * JuriScan AI — Ancien point d'entrée DÉPRÉCIÉ (cause du crash Vercel 500).
  *
- * Contrat historique : `analyserDocumentAlerte(file: File)`.
- * L'implémentation canonique réelle (Gemini OCR) vit désormais dans
- * `src/app/actions/veilleActions.ts` avec la signature
- * `analyserDocumentAlerte(formData: FormData)` — injectable depuis
- * Power Automate / Outlook. Ce wrapper convertit juste `File` → `FormData`
- * et délègue, pour ne pas casser les appels existants.
+ * L'historique `analyserDocumentAlerte(file: File)` / `FormData` faisait
+ * transiter un objet binaire non sérialisable entre Client et Server Action
+ * (Minified React error #441). Ne plus l'utiliser : la page appelle
+ * désormais la passerelle sécurisée
+ * `src/app/actions/veilleActions.ts` ::
+ * `analyserDocumentAlerte(base64Data, mimeType, fileName)` (chaînes uniquement).
+ *
+ * Ce fichier ne conserve qu'un alias de type pour l'historique Git.
+ * Tout nouvel appel doit importer `@/app/actions/veilleActions`.
  */
 
-import {
-  analyserDocumentAlerte as analyserViaFormData,
-  type VeilleAnalyseResult,
-} from "@/app/actions/veilleActions";
+import type { AnalyseAlerteResponse } from "@/app/actions/veilleActions";
 
-export type AnalyseAlerteResult = VeilleAnalyseResult;
-
-export async function analyserDocumentAlerte(
-  file: File,
-): Promise<AnalyseAlerteResult> {
-  const formData = new FormData();
-  formData.append("file", file);
-  return analyserViaFormData(formData);
-}
+export type AnalyseAlerteResult = AnalyseAlerteResponse;
