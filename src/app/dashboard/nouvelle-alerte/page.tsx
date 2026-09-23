@@ -8,7 +8,14 @@ import {
   simulerAnalyseAlerte,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
-import { analyserDocumentAlerte } from "@/app/actions/veilleActions";
+
+interface ApiAnalyseData {
+  numeroOrdre?: string;
+  natureTexte?: string;
+  referenceTexte?: string;
+  resumeTexte?: string;
+  libelleApplicable?: string;
+}
 
 const STATUTS = [
   { code: "NON_CONFORME_0", label: "Non conforme (0 %)" },
@@ -29,7 +36,7 @@ function formatTaille(bytes: number): string {
 
 /**
  * Encodage Base64 côté navigateur (FileReader) : seul du texte sérialisable
- * transite vers la Server Action — aucun objet File / binaire brut.
+ * transite en JSON vers POST /api/analyse — aucun objet File / binaire brut.
  */
 function fichierVersBase64Pur(f: File): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -83,15 +90,26 @@ export default function NouvelleAlertePage() {
     setErreur(null);
     setSaved(false);
     try {
-      // Sécurisé : encodage Base64 navigateur → la Server Action ne reçoit
-      // que des chaînes sérialisables (base64 pur + MIME + nom).
+      // Architecture REST : Base64 navigateur → POST JSON /api/analyse.
+      // Aucune Server Action : aucun objet binaire dans les Server Components.
       const base64Data = await fichierVersBase64Pur(file);
       const mimeType = file.type || "application/pdf";
-      const res = await analyserDocumentAlerte(base64Data, mimeType, file.name);
-      if (!res.success) {
-        setErreur("Échec de l'analyse IA.");
+      const reponse = await fetch("/api/analyse", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ base64Data, mimeType, fileName: file.name }),
+      });
+      const payload = (await reponse.json()) as {
+        success?: boolean;
+        data?: ApiAnalyseData;
+        source?: "gemini" | "simulation";
+        error?: string;
+      };
+      if (!reponse.ok || !payload.success || !payload.data) {
+        setErreur(payload.error || "Échec de l'analyse IA.");
         return;
       }
+      const data = payload.data;
       // Fusion : les 5 champs IA extraits + socle local pour les 21 champs.
       const socle = simulerAnalyseAlerte({
         fileName: file.name,
@@ -100,23 +118,23 @@ export default function NouvelleAlertePage() {
       }).analyse;
       setResultat({
         ...socle,
-        numeroOrdre: res.data.numeroOrdre || socle.numeroOrdre,
-        natureTexte: res.data.natureTexte || socle.natureTexte,
-        referenceTexte: res.data.referenceTexte || socle.referenceTexte,
-        resumeTexte: res.data.resumeTexte || socle.resumeTexte,
-        libelleApplicable: res.data.libelleApplicable || socle.libelleApplicable,
+        numeroOrdre: data.numeroOrdre || socle.numeroOrdre,
+        natureTexte: data.natureTexte || socle.natureTexte,
+        referenceTexte: data.referenceTexte || socle.referenceTexte,
+        resumeTexte: data.resumeTexte || socle.resumeTexte,
+        libelleApplicable: data.libelleApplicable || socle.libelleApplicable,
       });
       setTexteExtrait(
         [
           `—— OCR Gemini gemini-1.5-flash : ${file.name} ——`,
           "",
-          `Référence : ${res.data.referenceTexte}`,
-          `Résumé : ${res.data.resumeTexte}`,
+          `Référence : ${data.referenceTexte}`,
+          `Résumé : ${data.resumeTexte}`,
           "",
-          `Libellé applicable : ${res.data.libelleApplicable}`,
+          `Libellé applicable : ${data.libelleApplicable}`,
         ].join("\n"),
       );
-      setSource(res.source);
+      setSource(payload.source ?? "simulation");
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
     } finally {
@@ -244,10 +262,10 @@ export default function NouvelleAlertePage() {
               </div>
             )}
             <p className="mt-3 rounded-lg bg-brand-gold/15 px-3 py-2 text-[11px] leading-relaxed text-brand-blue">
-              OCR réel sécurisé : le navigateur encode en Base64 pur (FileReader) et la Server Action{" "}
-              <code className="font-mono">analyserDocumentAlerte(base64, mimeType)</code> (
-              <code className="font-mono">src/app/actions/veilleActions.ts</code>, Gemini 1.5 Flash) ne reçoit que
-              des chaînes sérialisables. Sans clé API, repli automatique sur simulation locale.
+              OCR réel (API REST) : le navigateur encode en Base64 pur (FileReader) et{" "}
+              <code className="font-mono">POST /api/analyse</code> (
+              <code className="font-mono">src/app/api/analyse/route.ts</code>, Gemini 1.5 Flash) ne reçoit que du
+              JSON sérialisable. Sans clé API, repli JO CI du 9 juillet 2026.
             </p>
           </div>
 
