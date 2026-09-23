@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import type { DepartementCode } from "@/domain/veille";
 import { DEPARTEMENTS } from "@/domain/veille";
 import {
@@ -166,11 +167,19 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-        <p className="text-sm text-slate-500">
-          Périmètre : <span className="font-semibold text-brand-blue">{perimetreLabel}</span>
-          {" — "}
-          {alertes.length} alerte{alertes.length > 1 ? "s" : ""}
-        </p>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-slate-500">
+            Périmètre : <span className="font-semibold text-brand-blue">{perimetreLabel}</span>
+            {" — "}
+            {alertes.length} alerte{alertes.length > 1 ? "s" : ""}
+          </p>
+          <Link
+            href="/dashboard/nouvelle-alerte"
+            className="rounded-lg border border-brand-gold bg-brand-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-blue/90"
+          >
+            ➕ Nouvelle Alerte
+          </Link>
+        </div>
 
         {/* CARTES KPI */}
         <section className="grid gap-4 sm:grid-cols-3">
