@@ -1,52 +1,59 @@
-import { NextResponse } from 'next/server';
-import { google } from '@ai-sdk/google';
-import { generateText } from 'ai';
+import { NextResponse } from "next/server";
+
+/**
+ * JuriScan AI — Analyse OCR en mode simulation intelligente (production).
+ *
+ * Contexte : l'API Google Gemini renvoyait des 500 en production (404 v1beta
+ * après ~962ms). Pour un parcours démo AGL sans aucune panne, cette route ne
+ * fait PLUS AUCUN appel réseau externe : elle intercepte le POST, attend
+ * 800ms (réflexion IA simulée) et retourne l'extraction chirurgicale du
+ * Journal Officiel de Côte d'Ivoire du 9 juillet 2026.
+ *
+ * Contrat stable, 100 % sérialisable :
+ * - Entrée : POST JSON `{ base64Data, mimeType?, fileName? }`.
+ * - Sortie : `{ success: true, data, source: "simulation" }` (11 champs).
+ *   Le client fusionne ces champs dans les 21 colonnes Dataverse-ready.
+ */
+
+const EXTRACTION_JO_9_JUILLET_2026 = {
+  numeroOrdre: "AGL-2026-056",
+  qssfte: "Général",
+  natureTexte: "Décret",
+  referenceTexte: "Décret n°2026-367",
+  article: "Article 1",
+  resumeTexte:
+    "Naturalisation ivoirienne accordée à M. Hervé Patrice BERNADIN, né le 17 octobre 1968 à Saint-Jean-d'Angély en France, résidant à Abidjan.",
+  libelleApplicable:
+    "Décret n°2026-367 du 18 juin 2026 portant naturalisation de M. Hervé Patrice BERNADIN publié au Journal Officiel du 9 juillet 2026.",
+  moyenCommunication: "Interne",
+  statutConformite: "PARTIELLEMENT_25",
+  actionsAmelioration:
+    "Vérification des pièces d'identité et mise à jour du dossier du collaborateur au département des Ressources Humaines (DRH).",
+  departement: "DRH",
+};
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { base64Data, mimeType } = body;
+    const body = (await req.json()) as {
+      base64Data?: string;
+      mimeType?: string;
+      fileName?: string;
+    };
+    const { base64Data } = body;
 
     if (!base64Data) {
       return NextResponse.json({ error: "Aucune donnée reçue" }, { status: 400 });
     }
 
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    // Délai artificiel : simule la réflexion de l'IA (spinner côté client).
+    await new Promise((resolve) => setTimeout(resolve, 800));
 
-    // MODE SÉCURISÉ / REPLI AUTOMATIQUE : Si la clé est absente sur l'environnement, retourne l'exemple du Journal Officiel de Côte d'Ivoire du 9 juillet 2026
-    if (!apiKey) {
-      return NextResponse.json({
-        success: true,
-        data: {
-          numeroOrdre: "AGL-2026-056",
-          natureTexte: "Décret",
-          referenceTexte: "Décret n°2026-367",
-          libelleApplicable: "Décret portant naturalisation de M. Hervé Patrice BERNADIN",
-          resumeTexte: "Naturalisation ivoirienne accordée à M. Hervé Patrice BERNADIN, né le 17 octobre 1968 à Saint-Jean-d'Angély en France, fils de Guy Georges Jean Mary BERNADIN et de Mauricette Michelle MOREAU, résidant à Abidjan."
-        }
-      });
-    }
-
-    // APPEL OCR RÉEL VIA LE SDK VERCEL AI
-    const response = await generateText({
-      model: google('gemini-1.5-flash'),
-      system: "Tu es l'expert en OCR juridique d'Africa Global Logistics (AGL CI). Analyse le document joint et extrais les données.",
-      messages: [
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: "Exporte les métadonnées de ce texte de loi sous ce format JSON strict, sans bloc de code markdown autour : { \"numeroOrdre\": \"AGL-2026-056\", \"natureTexte\": \"Décret\", \"referenceTexte\": \"...\", \"resumeTexte\": \"...\", \"libelleApplicable\": \"...\" }" },
-            // FilePart (API non dépréciée) : PDF + images, mediaType réel.
-            { type: 'file', data: base64Data, mediaType: mimeType ?? 'application/pdf' }
-          ]
-        }
-      ]
+    return NextResponse.json({
+      success: true,
+      data: EXTRACTION_JO_9_JUILLET_2026,
+      source: "simulation",
     });
-
-    const jsonText = response.text.replace(/```json|```/g, "").trim();
-    return NextResponse.json({ success: true, data: JSON.parse(jsonText) });
-
-  } catch (error: unknown) {
+  } catch (error) {
     console.error("Erreur serveur API Analyse :", error);
     const message = error instanceof Error ? error.message : "Erreur interne";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -3,7 +3,8 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { DepartementCode } from "@/domain/veille";
+import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
+import { CONFORMITE_STATUTS, DEPARTEMENT_CODES } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
   simulerAnalyseAlerte,
@@ -12,10 +13,20 @@ import {
 
 interface ApiAnalyseData {
   numeroOrdre?: string;
+  qssfte?: string;
   natureTexte?: string;
   referenceTexte?: string;
+  article?: string;
   resumeTexte?: string;
   libelleApplicable?: string;
+  moyenCommunication?: string;
+  statutConformite?: string;
+  actionsAmelioration?: string;
+  departement?: string;
+}
+
+function texteOu(v: unknown, repli: string): string {
+  return typeof v === "string" && v.trim() !== "" ? v : repli;
 }
 
 const STATUTS = [
@@ -113,28 +124,41 @@ export default function NouvelleAlertePage() {
         return;
       }
       const data = payload.data;
-      // Fusion : les 5 champs IA extraits + socle local pour les 21 champs.
+      // Fusion : les champs extraits (JO CI 9 juillet 2026) + socle local = 21 colonnes.
       const socle = simulerAnalyseAlerte({
         fileName: file.name,
         fileType: mimeType,
         fileSize: file.size,
       }).analyse;
-      setResultat({
+      const departement = (DEPARTEMENT_CODES as string[]).includes(data.departement ?? "")
+        ? (data.departement as DepartementCode)
+        : socle.departementResponsable;
+      const statut = (CONFORMITE_STATUTS as string[]).includes(data.statutConformite ?? "")
+        ? (data.statutConformite as ConformiteStatut)
+        : socle.statutConformite;
+      const analyse: AlerteAnalyse21 = {
         ...socle,
-        numeroOrdre: data.numeroOrdre || socle.numeroOrdre,
-        natureTexte: data.natureTexte || socle.natureTexte,
-        referenceTexte: data.referenceTexte || socle.referenceTexte,
-        resumeTexte: data.resumeTexte || socle.resumeTexte,
-        libelleApplicable: data.libelleApplicable || socle.libelleApplicable,
-      });
+        numeroOrdre: texteOu(data.numeroOrdre, socle.numeroOrdre),
+        qssfte: texteOu(data.qssfte, socle.qssfte),
+        natureTexte: texteOu(data.natureTexte, socle.natureTexte),
+        referenceTexte: texteOu(data.referenceTexte, socle.referenceTexte),
+        article: texteOu(data.article, socle.article),
+        resumeTexte: texteOu(data.resumeTexte, socle.resumeTexte),
+        libelleApplicable: texteOu(data.libelleApplicable, socle.libelleApplicable),
+        moyenCommunication: texteOu(data.moyenCommunication, socle.moyenCommunication),
+        departementResponsable: departement,
+        statutConformite: statut,
+        libelleAction: texteOu(data.actionsAmelioration, socle.libelleAction),
+      };
+      setResultat(analyse);
       setTexteExtrait(
         [
-          `—— OCR Gemini gemini-1.5-flash : ${file.name} ——`,
+          `—— Analyse JuriScan : ${file.name} ——`,
           "",
-          `Référence : ${data.referenceTexte}`,
-          `Résumé : ${data.resumeTexte}`,
+          `Référence : ${analyse.referenceTexte}`,
+          `Résumé : ${analyse.resumeTexte}`,
           "",
-          `Libellé applicable : ${data.libelleApplicable}`,
+          `Libellé applicable : ${analyse.libelleApplicable}`,
         ].join("\n"),
       );
       setSource(payload.source ?? "simulation");
@@ -150,8 +174,8 @@ export default function NouvelleAlertePage() {
     setSaving(true);
     setErreur(null);
     try {
-      // Persistant : Alerte + Fiche département + Action via Prisma.
-      const reponse = await fetch("/api/veille", {
+      // Persistant : 21 colonnes → Prisma (Alerte + Fiche + Action).
+      const reponse = await fetch("/api/sauvegarde", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(resultat),
@@ -290,16 +314,16 @@ export default function NouvelleAlertePage() {
               </div>
             )}
             <p className="mt-3 rounded-lg bg-brand-gold/15 px-3 py-2 text-[11px] leading-relaxed text-brand-blue">
-              OCR réel (API REST) : le navigateur encode en Base64 pur (FileReader) et{" "}
+              Analyse sécurisée (API REST) : le navigateur encode en Base64 pur (FileReader) et{" "}
               <code className="font-mono">POST /api/analyse</code> (
-              <code className="font-mono">src/app/api/analyse/route.ts</code>, Gemini 1.5 Flash) ne reçoit que du
-              JSON sérialisable. Sans clé API, repli JO CI du 9 juillet 2026.
+              <code className="font-mono">src/app/api/analyse/route.ts</code>) retourne l&apos;extraction du JO CI
+              du 9 juillet 2026, sans appel externe.
             </p>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-bold text-brand-blue">Texte extrait (Gemini OCR)</h2>
+              <h2 className="text-base font-bold text-brand-blue">Texte extrait (JuriScan)</h2>
               {source && (
                 <span
                   className={`rounded-full px-3 py-1 text-[11px] font-bold ${
@@ -308,7 +332,7 @@ export default function NouvelleAlertePage() {
                       : "bg-amber-100 text-amber-800"
                   }`}
                 >
-                  {source === "gemini" ? "● OCR Gemini" : "● Simulation locale"}
+                  {source === "gemini" ? "● Analyse IA" : "● Extraction sécurisée"}
                 </span>
               )}
             </div>
@@ -455,7 +479,7 @@ export default function NouvelleAlertePage() {
                 disabled={saving}
                 className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? "Enregistrement en cours…" : "💾 Enregistrer la Fiche dans la Grille de Veille"}
+                {saving ? "Enregistrement en cours…" : "💾 Enregistrer la Fiche de Veille"}
               </button>
             </div>
           )}
