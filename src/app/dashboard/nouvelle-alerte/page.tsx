@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { DepartementCode } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
@@ -53,7 +54,9 @@ function fichierVersBase64Pur(f: File): Promise<string> {
 }
 
 export default function NouvelleAlertePage() {
+  const router = useRouter();
   const inputRef = useRef<HTMLInputElement>(null);
+  const [saving, setSaving] = useState(false);
   const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -139,6 +142,31 @@ export default function NouvelleAlertePage() {
       setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function enregistrerFiche() {
+    if (!resultat) return;
+    setSaving(true);
+    setErreur(null);
+    try {
+      // Persistant : Alerte + Fiche département + Action via Prisma.
+      const reponse = await fetch("/api/veille", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(resultat),
+      });
+      const payload = (await reponse.json()) as { success?: boolean; error?: string };
+      if (!reponse.ok || !payload.success) {
+        setErreur(payload.error || "Échec de l'enregistrement en base.");
+        return;
+      }
+      // Redirection opérationnelle : la fiche rejoint l'onglet de sa direction.
+      router.push("/dashboard");
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : "Échec de l'enregistrement en base.");
+    } finally {
+      setSaving(false);
     }
   }
 
@@ -420,6 +448,15 @@ export default function NouvelleAlertePage() {
                   Relancer l&apos;analyse
                 </button>
               </div>
+
+              <button
+                type="button"
+                onClick={enregistrerFiche}
+                disabled={saving}
+                className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {saving ? "Enregistrement en cours…" : "💾 Enregistrer la Fiche dans la Grille de Veille"}
+              </button>
             </div>
           )}
         </section>

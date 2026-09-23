@@ -2,15 +2,39 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { DepartementCode } from "@/domain/veille";
-import { DEPARTEMENTS } from "@/domain/veille";
+import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
+import { CONFORMITE_POURCENTAGE, DEPARTEMENTS } from "@/domain/veille";
 import {
   MOCK_ACTIONS,
   MOCK_ALERTES,
   actionsEnRetard,
   tauxConformiteMoyen,
+  type MockAction,
   type MockAlerte,
 } from "@/data/veille-mock";
+
+/** Ligne brute renvoyée par GET /api/veille (Prisma, sérialisé JSON). */
+interface ApiFiche {
+  id: string;
+  departement: DepartementCode;
+  statutConformite: ConformiteStatut;
+  actionsAmelioration: {
+    id: string;
+    libelleAction: string;
+    delai: string | null;
+    tauxAvancement: number;
+  }[];
+}
+interface ApiAlerte {
+  id: string;
+  numeroOrdre: string;
+  natureTexte: string;
+  referenceTexte: string;
+  resumeTexte: string;
+  dateEntreeVigueur: string | null;
+  createdAt: string;
+  fichesDepartements: ApiFiche[];
+}
 
 type TabCode = "ALL" | DepartementCode;
 
@@ -56,11 +80,59 @@ function formatDateFR(iso: string): string {
 export default function DashboardPage() {
   const [tab, setTab] = useState<TabCode>("ALL");
   const [now, setNow] = useState<Date | null>(null);
+  const [dbAlertes, setDbAlertes] = useState<MockAlerte[]>([]);
+  const [dbActions, setDbActions] = useState<MockAction[]>([]);
 
   useEffect(() => {
     setNow(new Date());
     const timer = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(timer);
+  }, []);
+
+  // Fiches enregistrées en base (POST /api/veille) : repli silencieux sur les mocks si DB absente.
+  useEffect(() => {
+    let actif = true;
+    fetch("/api/veille")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload: { success?: boolean; data?: ApiAlerte[] } | null) => {
+        if (!actif || !payload?.success || !Array.isArray(payload.data)) return;
+        const alertes: MockAlerte[] = [];
+        const actions: MockAction[] = [];
+        for (const a of payload.data) {
+          for (const f of a.fichesDepartements) {
+            const action = f.actionsAmelioration[0];
+            alertes.push({
+              id: `db-${a.id}-${f.id}`,
+              numeroOrdre: a.numeroOrdre,
+              departement: f.departement,
+              natureTexte: a.natureTexte,
+              referenceTexte: a.referenceTexte,
+              resumeTexte: a.resumeTexte,
+              dateEntreeVigueur: (a.dateEntreeVigueur ?? a.createdAt).slice(0, 10),
+              statut: f.statutConformite,
+              tauxAvancement: action
+                ? Math.round(action.tauxAvancement)
+                : CONFORMITE_POURCENTAGE[f.statutConformite],
+            });
+            if (action) {
+              actions.push({
+                id: `db-action-${action.id}`,
+                numeroOrdre: a.numeroOrdre,
+                libelleAction: action.libelleAction,
+                responsable: "Assigné (base)",
+                delai: (action.delai ?? a.createdAt).slice(0, 10),
+                tauxAvancement: Math.round(action.tauxAvancement),
+              });
+            }
+          }
+        }
+        setDbAlertes(alertes);
+        setDbActions(actions);
+      })
+      .catch(() => {});
+    return () => {
+      actif = false;
+    };
   }, []);
 
   const dateStr = now
@@ -79,18 +151,21 @@ export default function DashboardPage() {
       }).format(now)
     : "--:--:--";
 
+  const toutesAlertes = useMemo(() => [...dbAlertes, ...MOCK_ALERTES], [dbAlertes]);
+  const toutesActions = useMemo(() => [...dbActions, ...MOCK_ACTIONS], [dbActions]);
+
   const alertes = useMemo(
     () =>
       tab === "ALL"
-        ? MOCK_ALERTES
-        : MOCK_ALERTES.filter((a) => a.departement === tab),
-    [tab],
+        ? toutesAlertes
+        : toutesAlertes.filter((a) => a.departement === tab),
+    [tab, toutesAlertes],
   );
 
   const numeros = useMemo(() => new Set(alertes.map((a) => a.numeroOrdre)), [alertes]);
   const actionsPerimetre = useMemo(
-    () => MOCK_ACTIONS.filter((a) => numeros.has(a.numeroOrdre)),
-    [numeros],
+    () => toutesActions.filter((a) => numeros.has(a.numeroOrdre)),
+    [numeros, toutesActions],
   );
   const nbRetard = useMemo(
     () => actionsEnRetard(actionsPerimetre).length,
