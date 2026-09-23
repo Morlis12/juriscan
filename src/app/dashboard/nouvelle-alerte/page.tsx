@@ -7,7 +7,7 @@ import {
   DEPARTEMENT_OPTIONS,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
-import { analyserDocumentAlerte } from "./actions";
+import { analyserDocumentAlerte } from "@/app/actions/veilleActions";
 
 const STATUTS = [
   { code: "NON_CONFORME_0", label: "Non conforme (0 %)" },
@@ -34,6 +34,7 @@ export default function NouvelleAlertePage() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [texteExtrait, setTexteExtrait] = useState<string>("");
   const [resultat, setResultat] = useState<AlerteAnalyse21 | null>(null);
+  const [source, setSource] = useState<"gemini" | "simulation" | null>(null);
   const [saved, setSaved] = useState(false);
 
   function prendreFichier(f: File | undefined) {
@@ -51,6 +52,7 @@ export default function NouvelleAlertePage() {
     setFile(f);
     setResultat(null);
     setTexteExtrait("");
+    setSource(null);
   }
 
   async function lancerAnalyse() {
@@ -62,10 +64,13 @@ export default function NouvelleAlertePage() {
     setErreur(null);
     setSaved(false);
     try {
-      // Appel isolé : toute la logique IA vit dans la Server Action.
-      const res = await analyserDocumentAlerte(file);
+      // Appel isolé : OCR réel Gemini via la Server Action (FormData → 21 champs).
+      const formData = new FormData();
+      formData.append("file", file);
+      const res = await analyserDocumentAlerte(formData);
       setTexteExtrait(res.texteExtrait);
       setResultat(res.analyse);
+      setSource(res.source);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
     } finally {
@@ -166,6 +171,7 @@ export default function NouvelleAlertePage() {
                     setFile(null);
                     setResultat(null);
                     setTexteExtrait("");
+                    setSource(null);
                   }}
                   className="shrink-0 rounded-full px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
                 >
@@ -192,14 +198,28 @@ export default function NouvelleAlertePage() {
               </div>
             )}
             <p className="mt-3 rounded-lg bg-brand-gold/15 px-3 py-2 text-[11px] leading-relaxed text-brand-blue">
-              Industrialisation : cette Server Action <code className="font-mono">analyserDocumentAlerte(file)</code> est
-              pure et isolée. Le flux Power Automate (Outlook → injection arrière-plan) la réutilisera puis la
-              remplacera par un connecteur natif Microsoft, sans toucher cette page.
+              OCR réel : la Server Action <code className="font-mono">analyserDocumentAlerte(formData)</code> (
+              <code className="font-mono">src/app/actions/veilleActions.ts</code>, Gemini 1.5 Flash) est pure et
+              isolée. Power Automate (Outlook → injection arrière-plan) la réutilisera sans toucher cette page.
+              Sans clé API, repli automatique sur simulation locale.
             </p>
           </div>
 
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-bold text-brand-blue">Texte extrait (simulation)</h2>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <h2 className="text-base font-bold text-brand-blue">Texte extrait (Gemini OCR)</h2>
+              {source && (
+                <span
+                  className={`rounded-full px-3 py-1 text-[11px] font-bold ${
+                    source === "gemini"
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-amber-100 text-amber-800"
+                  }`}
+                >
+                  {source === "gemini" ? "● OCR Gemini" : "● Simulation locale"}
+                </span>
+              )}
+            </div>
             <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-slate-100">
               {texteExtrait || "— Lancez l'analyse pour voir l'extraction du document ici. —"}
             </pre>
