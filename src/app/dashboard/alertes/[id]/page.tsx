@@ -9,6 +9,10 @@ import {
   creerAlerteVierge,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
+import {
+  PreuveFichierInput,
+  type PreuveFichierValeur,
+} from "@/components/PreuveFichierInput";
 import { MOCK_ALERTES } from "@/data/veille-mock";
 
 /**
@@ -48,6 +52,9 @@ interface ApiGetData {
     preuvesExistantes: string | null;
     statutConformite: ConformiteStatut;
     preuveDifferee: string | null;
+    preuveFichierNom?: string | null;
+    preuveFichierMime?: string | null;
+    preuveFichierDonnees?: string | null;
   };
   action: {
     id: string;
@@ -64,6 +71,7 @@ export default function ModifierAlertePage() {
   const router = useRouter();
   const [form, setForm] = useState<AlerteAnalyse21 | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
+  const [preuveFichier, setPreuveFichier] = useState<PreuveFichierValeur | null>(null);
   const [demo, setDemo] = useState(false);
   const [chargement, setChargement] = useState(true);
   const [erreur, setErreur] = useState<string | null>(null);
@@ -140,6 +148,15 @@ export default function ModifierAlertePage() {
           tauxAvancement: action ? Math.round(action.tauxAvancement) : 0,
         });
         setActionId(action?.id ?? null);
+        setPreuveFichier(
+          fiche.preuveFichierNom && fiche.preuveFichierDonnees
+            ? {
+                nom: fiche.preuveFichierNom,
+                mime: fiche.preuveFichierMime ?? "application/octet-stream",
+                donnees: fiche.preuveFichierDonnees,
+              }
+            : null,
+        );
       })
       .catch(() => {
         if (actif) setErreur("Impossible de charger la fiche.");
@@ -176,7 +193,13 @@ export default function ModifierAlertePage() {
       const reponse = await fetch(`/api/veille/${params.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, actionId }),
+        body: JSON.stringify({
+          ...form,
+          actionId,
+          preuveFichierNom: preuveFichier?.nom ?? "",
+          preuveFichierMime: preuveFichier?.mime ?? "",
+          preuveFichierDonnees: preuveFichier?.donnees ?? "",
+        }),
       });
       const payload = (await reponse.json()) as {
         success?: boolean;
@@ -320,6 +343,12 @@ export default function ModifierAlertePage() {
                 </label>
                 <Zone label="14 · Actions conformité existantes" value={form.actionsExistantes} onChange={(v) => set("actionsExistantes", v)} compact />
                 <Zone label="15 · Preuves de conformité existantes" value={form.preuvesExistantes} onChange={(v) => set("preuvesExistantes", v)} compact />
+                <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm sm:col-span-2">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Document de preuve joint (PDF, image — 8 Mo max)
+                  </span>
+                  <PreuveFichierInput valeur={preuveFichier} onChange={setPreuveFichier} />
+                </div>
                 <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     16 · Statut de conformité

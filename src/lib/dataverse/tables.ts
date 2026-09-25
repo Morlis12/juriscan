@@ -28,6 +28,7 @@ export interface DataverseField {
     | "TwoOptions"
     | "OptionSet"
     | "Lookup"
+    | "File"
     | "UniqueIdentifier";
 }
 
@@ -104,6 +105,7 @@ export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
       { logicalName: "statutconformite", displayName: "Statut de conformité", dataType: "OptionSet" },
       { logicalName: "preuvedifferee", displayName: "Preuve de conformité différée", dataType: "MultipleLinesOfText" },
       { logicalName: "fluxstatut", displayName: "Statut du workflow (double validation)", dataType: "OptionSet" },
+      { logicalName: "preuvefichier", displayName: "Document de preuve (fichier)", dataType: "File" },
     ],
   },
   VeilleAction: {

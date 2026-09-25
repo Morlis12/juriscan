@@ -149,6 +149,10 @@ export interface DomainVeilleFiche {
   preuveDifferee: string | null;
   /** Position dans le workflow à double validation JuriScan × JuriDesk. */
   fluxStatut: FluxStatut;
+  /** Document de preuve joint (nom, MIME, base64) — téléversé par la BU. */
+  preuveFichierNom: string | null;
+  preuveFichierMime: string | null;
+  preuveFichierDonnees: string | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 }

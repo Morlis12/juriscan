@@ -24,6 +24,9 @@ interface ApiFiche {
   statutConformite: ConformiteStatut;
   fluxStatut?: FluxStatut;
   preuveDifferee?: string | null;
+  preuveFichierNom?: string | null;
+  preuveFichierMime?: string | null;
+  preuveFichierDonnees?: string | null;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
@@ -49,6 +52,10 @@ type AlertePilotee = MockAlerte & {
   propositionBU?: string | null;
   /** Preuve différée pilotée par la BU (jamais renseignée à l'assignation). */
   preuveDifferee?: string | null;
+  /** Document de preuve joint (téléchargeable). */
+  preuveFichierNom?: string | null;
+  preuveFichierMime?: string | null;
+  preuveFichierDonnees?: string | null;
 };
 
 type FiltreBUCode = "ALL" | DepartementCode;
@@ -188,6 +195,9 @@ export default function DashboardPage() {
               fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
               propositionBU: a.propositionBU ?? null,
               preuveDifferee: f.preuveDifferee ?? null,
+              preuveFichierNom: f.preuveFichierNom ?? null,
+              preuveFichierMime: f.preuveFichierMime ?? null,
+              preuveFichierDonnees: f.preuveFichierDonnees ?? null,
             });
             if (action) {
               actions.push({
@@ -234,6 +244,9 @@ export default function DashboardPage() {
         fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
         propositionBU: m.departement,
         preuveDifferee: null as string | null,
+        preuveFichierNom: null as string | null,
+        preuveFichierMime: null as string | null,
+        preuveFichierDonnees: null as string | null,
       })),
     ].map((a) =>
       tauxCorriges[a.id] !== undefined
@@ -861,6 +874,19 @@ export default function DashboardPage() {
                                       {f.preuveDifferee && (
                                         <p className="mt-1 text-[11px] text-slate-500">
                                           Preuve différée : {f.preuveDifferee}
+                                        </p>
+                                      )}
+                                      {f.preuveFichierNom && f.preuveFichierDonnees && (
+                                        <p className="mt-1">
+                                          <a
+                                            href={`data:${f.preuveFichierMime || "application/octet-stream"};base64,${f.preuveFichierDonnees}`}
+                                            download={f.preuveFichierNom}
+                                            title="Télécharger le document de preuve"
+                                            onClick={(e) => e.stopPropagation()}
+                                            className="inline-block max-w-full truncate text-[11px] font-semibold text-brand-blue underline decoration-brand-gold decoration-2 underline-offset-2"
+                                          >
+                                            📎 {f.preuveFichierNom}
+                                          </a>
                                         </p>
                                       )}
                                     </div>

@@ -14,6 +14,11 @@ import {
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
+import {
+  PreuveFichierInput,
+  urlPreuve,
+  type PreuveFichierValeur,
+} from "@/components/PreuveFichierInput";
 
 type BUConcernee = (typeof BU_PROPOSITIONNABLES)[number];
 
@@ -25,6 +30,9 @@ interface ApiFiche {
   preuveDifferee?: string | null;
   actionsExistantes?: string | null;
   preuvesExistantes?: string | null;
+  preuveFichierNom?: string | null;
+  preuveFichierMime?: string | null;
+  preuveFichierDonnees?: string | null;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
@@ -60,6 +68,9 @@ interface FicheApprobation extends MockAlerte {
   // Champs BU (à remplir / compléter à l'approbation).
   actionsExistantes: string;
   preuvesExistantes: string;
+  preuveFichierNom: string;
+  preuveFichierMime: string;
+  preuveFichierDonnees: string;
   libelleAction: string;
   responsable: string;
   delai: string;
@@ -95,6 +106,7 @@ export default function ApprobationsPage() {
   const [preuveDifferee, setPreuveDifferee] = useState("");
   const [actionsExistantes, setActionsExistantes] = useState("");
   const [preuvesExistantes, setPreuvesExistantes] = useState("");
+  const [preuveFichier, setPreuveFichier] = useState<PreuveFichierValeur | null>(null);
   const [noteResp, setNoteResp] = useState(false);
   const [traitement, setTraitement] = useState(false);
 
@@ -128,6 +140,9 @@ export default function ApprobationsPage() {
               qssfte: a.qssfte ?? "",
               actionsExistantes: f.actionsExistantes ?? "",
               preuvesExistantes: f.preuvesExistantes ?? "",
+              preuveFichierNom: f.preuveFichierNom ?? "",
+              preuveFichierMime: f.preuveFichierMime ?? "",
+              preuveFichierDonnees: f.preuveFichierDonnees ?? "",
               libelleAction: action?.libelleAction ?? "",
               responsable: action?.responsable?.email ?? "",
               delai: (action?.delai ?? "").slice(0, 10),
@@ -159,6 +174,9 @@ export default function ApprobationsPage() {
         qssfte: "",
         actionsExistantes: "",
         preuvesExistantes: "",
+        preuveFichierNom: "",
+        preuveFichierMime: "",
+        preuveFichierDonnees: "",
         libelleAction: "",
         responsable: "",
         delai: "",
@@ -185,6 +203,15 @@ export default function ApprobationsPage() {
     setPreuveDifferee(f.preuveDifferee || "");
     setActionsExistantes(f.actionsExistantes || "");
     setPreuvesExistantes(f.preuvesExistantes || "");
+    setPreuveFichier(
+      f.preuveFichierNom && f.preuveFichierDonnees
+        ? {
+            nom: f.preuveFichierNom,
+            mime: f.preuveFichierMime || "application/octet-stream",
+            donnees: f.preuveFichierDonnees,
+          }
+        : null,
+    );
     setNoteResp(false);
     setMessage(null);
   }
@@ -234,6 +261,9 @@ export default function ApprobationsPage() {
         preuveDifferee,
         actionsExistantes,
         preuvesExistantes,
+        preuveFichierNom: preuveFichier?.nom ?? "",
+        preuveFichierMime: preuveFichier?.mime ?? "",
+        preuveFichierDonnees: preuveFichier?.donnees ?? "",
       };
       if (prev.some((p) => p.id === f.id)) {
         return prev.map((p) => (p.id === f.id ? maj : p));
@@ -254,6 +284,9 @@ export default function ApprobationsPage() {
           preuveDifferee,
           actionsExistantes,
           preuvesExistantes,
+          preuveFichierNom: preuveFichier?.nom ?? "",
+          preuveFichierMime: preuveFichier?.mime ?? "",
+          preuveFichierDonnees: preuveFichier?.donnees ?? "",
           actionId: f.actionId,
         }),
       });
@@ -372,6 +405,18 @@ export default function ApprobationsPage() {
                       <p className="mt-1 text-xs font-bold tabular-nums text-brand-blue">
                         Statut de conformité : {STATUTS_CONFORMITE.find((s) => s.code === f.statut)?.label ?? f.statut} · {f.tauxAvancement} %
                       </p>
+                      {f.preuveFichierNom && f.preuveFichierDonnees && (
+                        <p className="mt-1">
+                          <a
+                            href={urlPreuve(f.preuveFichierMime, f.preuveFichierDonnees)}
+                            download={f.preuveFichierNom}
+                            title="Télécharger le document de preuve"
+                            className="inline-block max-w-full truncate text-xs font-semibold text-brand-blue underline decoration-brand-gold decoration-2 underline-offset-2"
+                          >
+                            📎 {f.preuveFichierNom}
+                          </a>
+                        </p>
+                      )}
                     </div>
                     <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">
                       {FLUX_STATUT_LABELS.ATTENTE_APPROBATION_METIER}
@@ -434,6 +479,9 @@ export default function ApprobationsPage() {
                             className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
                             placeholder="Ex. PV du comité de conformité du 12/03"
                           />
+                          <span className="mt-2 block">
+                            <PreuveFichierInput valeur={preuveFichier} onChange={setPreuveFichier} />
+                          </span>
                         </label>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <label className="block text-sm">

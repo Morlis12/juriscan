@@ -45,6 +45,10 @@ export interface FicheVeillePayload {
   /** Position workflow ; défaut ATTENTE_VALIDATION_JURIDIQUE (création IA), */
   /** le juridique fait basculer vers ATTENTE_APPROBATION_METIER en validant. */
   fluxStatut?: unknown;
+  /** Document de preuve joint (nom, MIME, base64 pur) — téléversé par la BU. */
+  preuveFichierNom?: unknown;
+  preuveFichierMime?: unknown;
+  preuveFichierDonnees?: unknown;
   libelleAction?: unknown;
   delai?: unknown;
   tauxAvancement?: unknown;
@@ -58,6 +62,54 @@ function dateOuNull(v: unknown): Date | null {
   if (typeof v !== "string" || v.trim() === "") return null;
   const d = new Date(v.length === 10 ? `${v}T00:00:00` : v);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Limite du document de preuve : 8 Mo (~11 Mo une fois encodé en base64). */
+export const PREUVE_FICHIER_MAX_BASE64 = 11_000_000;
+
+const PREUVE_MIME_OK = [
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+];
+
+export interface PreuveFichierDonnees {
+  nom: string | null;
+  mime: string | null;
+  donnees: string | null;
+}
+
+/**
+ * Valide le document de preuve joint aux preuves existantes (base64 pur).
+ * - Retourne null si aucune clé de fichier n'est fournie (champ inchangé).
+ * - Retourne des nulls si le client vide les trois clés (suppression du document).
+ * - Lève une erreur VALIDATION_400 si le document est incomplet, refusé ou trop lourd.
+ */
+export function validerPreuveFichier(b: {
+  preuveFichierNom?: unknown;
+  preuveFichierMime?: unknown;
+  preuveFichierDonnees?: unknown;
+}): PreuveFichierDonnees | null {
+  const { preuveFichierNom: n, preuveFichierMime: m, preuveFichierDonnees: d } = b;
+  if (n === undefined && m === undefined && d === undefined) return null;
+  const nom = typeof n === "string" ? n.trim().slice(0, 255) : "";
+  const mime = typeof m === "string" ? m.trim() : "";
+  const donnees = typeof d === "string" ? d.replace(/\s+/g, "") : "";
+  if (!nom && !mime && !donnees) return { nom: null, mime: null, donnees: null };
+  const err = (message: string) => {
+    const e = new Error(message);
+    (e as NodeJS.ErrnoException).code = "VALIDATION_400";
+    return e;
+  };
+  if (!donnees) throw err("Document de preuve incomplet.");
+  if (mime && !PREUVE_MIME_OK.includes(mime)) {
+    throw err("Format de preuve non pris en charge (PDF, PNG, JPG, WEBP).");
+  }
+  if (donnees.length > PREUVE_FICHIER_MAX_BASE64) {
+    throw err("Document de preuve trop volumineux (8 Mo maximum).");
+  }
+  return { nom: nom || "preuve", mime: mime || "application/octet-stream", donnees };
 }
 
 /**
@@ -142,6 +194,8 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
     fluxRaw && (FLUX_STATUTS as string[]).includes(fluxRaw)
       ? (fluxRaw as FluxStatut)
       : "ATTENTE_VALIDATION_JURIDIQUE";
+  // Document de preuve joint (optionnel à la création, 400 si invalide).
+  const preuveFichier = validerPreuveFichier(b);
 
   const taux = Math.min(100, Math.max(0, Number(b.tauxAvancement) || 0));
   const libelleAction = chaine(b.libelleAction).trim();
@@ -170,6 +224,13 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
             statutConformite: statut as ConformiteStatut,
             preuveDifferee: chaine(b.preuveDifferee).trim() || null,
             fluxStatut,
+            ...(preuveFichier
+              ? {
+                  preuveFichierNom: preuveFichier.nom,
+                  preuveFichierMime: preuveFichier.mime,
+                  preuveFichierDonnees: preuveFichier.donnees,
+                }
+              : {}),
             ...(libelleAction
               ? {
                   actionsAmelioration: {

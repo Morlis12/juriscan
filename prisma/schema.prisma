@@ -87,6 +87,11 @@ model VeilleFiche {
   preuveDifferee    String?          @db.Text // Preuve de conformité différée
   // Position dans le workflow à double validation (JuriScan × JuriDesk).
   fluxStatut        FluxStatut       @default(ATTENTE_VALIDATION_JURIDIQUE)
+  // Document de preuve joint aux "Preuves de conformité existantes"
+  // (PDF/image, base64 — Dataverse : colonne Fichier sur la table).
+  preuveFichierNom    String? // Nom d'origine du document de preuve
+  preuveFichierMime   String? // Type MIME (application/pdf, image/…)
+  preuveFichierDonnees String? @db.Text // Contenu base64 (sans préfixe data:)
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 

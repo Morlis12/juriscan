@@ -10,7 +10,12 @@ import { NextResponse } from "next/server";
  */
 
 import { prisma } from "@/lib/prisma";
-import { parseFicheRouteId, type FicheVeillePayload } from "@/lib/veille-save";
+import {
+  parseFicheRouteId,
+  validerPreuveFichier,
+  type FicheVeillePayload,
+  type PreuveFichierDonnees,
+} from "@/lib/veille-save";
 import {
   CONFORMITE_STATUTS,
   DEPARTEMENT_CODES,
@@ -108,6 +113,17 @@ export async function PUT(
     const libelleAction = chaine(b.libelleAction).trim();
     const taux = Math.min(100, Math.max(0, Number(b.tauxAvancement) || 0));
 
+    // Document de preuve joint (8 Mo max, sinon 400).
+    let preuveFichier: PreuveFichierDonnees | null = null;
+    try {
+      preuveFichier = validerPreuveFichier(b);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Document de preuve invalide." },
+        { status: 400 },
+      );
+    }
+
     // Responsable libre → lie un User existant par email si trouvé, sinon inchangé.
     let responsableId: string | undefined;
     let responsableNonLie = false;
@@ -153,6 +169,13 @@ export async function PUT(
           preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
           statutConformite: statut as ConformiteStatut,
           preuveDifferee: chaine(b.preuveDifferee).trim() || null,
+          ...(preuveFichier
+            ? {
+                preuveFichierNom: preuveFichier.nom,
+                preuveFichierMime: preuveFichier.mime,
+                preuveFichierDonnees: preuveFichier.donnees,
+              }
+            : {}),
         },
       });
       if (libelleAction) {
@@ -217,6 +240,9 @@ export async function PATCH(
       actionsExistantes?: unknown;
       preuvesExistantes?: unknown;
       responsable?: unknown;
+      preuveFichierNom?: unknown;
+      preuveFichierMime?: unknown;
+      preuveFichierDonnees?: unknown;
       actionId?: unknown;
     };
     // fluxStatut optionnel : absent = simple pilotage BU (taux, preuve…), flux inchangé.
@@ -250,6 +276,17 @@ export async function PATCH(
     }
     const preuveDifferee =
       typeof b.preuveDifferee === "string" ? b.preuveDifferee.trim() || null : undefined;
+
+    // Document de preuve joint (absent = inchangé, vidé = suppression, 400 si invalide).
+    let preuveFichier: PreuveFichierDonnees | null = null;
+    try {
+      preuveFichier = validerPreuveFichier(b);
+    } catch (error) {
+      return NextResponse.json(
+        { error: error instanceof Error ? error.message : "Document de preuve invalide." },
+        { status: 400 },
+      );
+    }
 
     // Responsable libre (email d'un User existant pour rattacher), comme en PUT.
     let responsableId: string | undefined;
@@ -291,6 +328,13 @@ export async function PATCH(
             : {}),
           ...(typeof b.preuvesExistantes === "string"
             ? { preuvesExistantes: b.preuvesExistantes.trim() || null }
+            : {}),
+          ...(preuveFichier
+            ? {
+                preuveFichierNom: preuveFichier.nom,
+                preuveFichierMime: preuveFichier.mime,
+                preuveFichierDonnees: preuveFichier.donnees,
+              }
             : {}),
         },
       });
