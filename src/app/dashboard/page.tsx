@@ -531,8 +531,11 @@ export default function DashboardPage() {
                       <span className="flex items-center justify-between gap-2 text-xs">
                         <span className="min-w-0 truncate font-mono font-bold text-brand-blue">
                           {g.numeroOrdre}
-                          <span className="ml-2 truncate font-sans font-medium text-slate-500">
-                            {g.referenceTexte} · {g.fiches.length} BU
+                          <span
+                            className="ml-2 truncate font-sans font-medium text-slate-500"
+                            title={`BU concernées : ${g.fiches.map((f) => f.departement).join(", ")}`}
+                          >
+                            {g.referenceTexte} · BU : {g.fiches.map((f) => f.departement).join(", ")}
                           </span>
                         </span>
                         <span className="shrink-0 font-bold tabular-nums text-brand-blue">
