@@ -23,6 +23,7 @@ interface ApiFiche {
   departement: DepartementCode;
   statutConformite: ConformiteStatut;
   fluxStatut?: FluxStatut;
+  preuveDifferee?: string | null;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
@@ -46,6 +47,8 @@ interface ApiAlerte {
 type AlertePilotee = MockAlerte & {
   fluxStatut: FluxStatut;
   propositionBU?: string | null;
+  /** Preuve différée pilotée par la BU (jamais renseignée à l'assignation). */
+  preuveDifferee?: string | null;
 };
 
 type FiltreBUCode = "ALL" | DepartementCode;
@@ -134,6 +137,8 @@ export default function DashboardPage() {
   // Filtre workflow (approuvés / en attente / rejetés) + recherche libre.
   const [filtreFlux, setFiltreFlux] = useState<"ALL" | FluxStatut>("ALL");
   const [recherche, setRecherche] = useState("");
+  // Taux ajustés par les BU depuis le tableau (affichage immédiat, PATCH au relâcher).
+  const [tauxCorriges, setTauxCorriges] = useState<Record<string, number>>({});
   // Texte déplié : affiche le niveau de conformité de chaque BU pour ce texte.
   const [texteOuvert, setTexteOuvert] = useState<string | null>(null);
 
@@ -182,6 +187,7 @@ export default function DashboardPage() {
                 : CONFORMITE_POURCENTAGE[f.statutConformite],
               fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
               propositionBU: a.propositionBU ?? null,
+              preuveDifferee: f.preuveDifferee ?? null,
             });
             if (action) {
               actions.push({
@@ -227,9 +233,14 @@ export default function DashboardPage() {
         ...m,
         fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
         propositionBU: m.departement,
+        preuveDifferee: null as string | null,
       })),
-    ],
-    [dbAlertes],
+    ].map((a) =>
+      tauxCorriges[a.id] !== undefined
+        ? { ...a, tauxAvancement: tauxCorriges[a.id] }
+        : a,
+    ),
+    [dbAlertes, tauxCorriges],
   );
   const toutesActions = useMemo(() => [...dbActions, ...MOCK_ACTIONS], [dbActions]);
 
@@ -295,6 +306,21 @@ export default function DashboardPage() {
       });
     } catch {
       /* démo locale : la transition optimiste suffit */
+    }
+  }
+
+  /** La BU pilote son taux d'avancement (tableau ou approbation), sans changer de flux. */
+  async function sauvegarderTaux(f: AlertePilotee, taux: number) {
+    const valeur = Math.min(100, Math.max(0, Math.round(taux)));
+    setTauxCorriges((prev) => ({ ...prev, [f.id]: valeur }));
+    try {
+      await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ tauxAvancement: valeur }),
+      });
+    } catch {
+      /* démo locale : l'affichage optimiste suffit */
     }
   }
 
@@ -813,47 +839,80 @@ export default function DashboardPage() {
                               {g.fiches.map((f) => (
                                 <li
                                   key={f.id}
-                                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                                  className="space-y-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
                                 >
-                                  <div className="min-w-0">
-                                    <p className="text-xs font-bold text-brand-blue">
-                                      {f.departement}
-                                    </p>
-                                    <p className="mt-1 flex flex-wrap items-center gap-1">
-                                      <span
-                                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[f.statut]}`}
+                                  <div className="flex flex-wrap items-center justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs font-bold text-brand-blue">
+                                        {f.departement}
+                                      </p>
+                                      <p className="mt-1 flex flex-wrap items-center gap-1">
+                                        <span
+                                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[f.statut]}`}
+                                        >
+                                          {STATUT_LABEL[f.statut]} · {f.tauxAvancement} %
+                                        </span>
+                                        <span
+                                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${FLUX_BADGE[f.fluxStatut]}`}
+                                        >
+                                          {FLUX_STATUT_LABELS[f.fluxStatut]}
+                                        </span>
+                                      </p>
+                                      {f.preuveDifferee && (
+                                        <p className="mt-1 text-[11px] text-slate-500">
+                                          Preuve différée : {f.preuveDifferee}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                      <Link
+                                        href={`/dashboard/alertes/${f.id}`}
+                                        title="Modifier la fiche BU"
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="rounded-lg border border-brand-blue px-2.5 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white"
                                       >
-                                        {STATUT_LABEL[f.statut]} · {f.tauxAvancement} %
-                                      </span>
-                                      <span
-                                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${FLUX_BADGE[f.fluxStatut]}`}
-                                      >
-                                        {FLUX_STATUT_LABELS[f.fluxStatut]}
-                                      </span>
-                                    </p>
+                                        Modifier
+                                      </Link>
+                                      {f.fluxStatut === "ATTENTE_VALIDATION_JURIDIQUE" ? (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            validerVersMetier(f.id);
+                                          }}
+                                          className="rounded-lg bg-brand-gold px-2.5 py-1 text-xs font-bold text-brand-blue shadow-sm hover:brightness-95"
+                                        >
+                                          Valider vers métier →
+                                        </button>
+                                      ) : null}
+                                    </div>
                                   </div>
-                                  <div className="flex items-center gap-2">
-                                    <Link
-                                      href={`/dashboard/alertes/${f.id}`}
-                                      title="Modifier la fiche BU"
+                                  {/* Taux piloté par la BU (tableau ou approbation). */}
+                                  <label className="block">
+                                    <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-brand-blue">
+                                      Taux d&apos;avancement (BU) — {f.tauxAvancement} %
+                                    </span>
+                                    <input
+                                      type="range"
+                                      min={0}
+                                      max={100}
+                                      value={f.tauxAvancement}
                                       onClick={(e) => e.stopPropagation()}
-                                      className="rounded-lg border border-brand-blue px-2.5 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white"
-                                    >
-                                      Modifier
-                                    </Link>
-                                    {f.fluxStatut === "ATTENTE_VALIDATION_JURIDIQUE" ? (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          validerVersMetier(f.id);
-                                        }}
-                                        className="rounded-lg bg-brand-gold px-2.5 py-1 text-xs font-bold text-brand-blue shadow-sm hover:brightness-95"
-                                      >
-                                        Valider vers métier →
-                                      </button>
-                                    ) : null}
-                                  </div>
+                                      onChange={(e) =>
+                                        setTauxCorriges((prev) => ({
+                                          ...prev,
+                                          [f.id]: Number(e.target.value),
+                                        }))
+                                      }
+                                      onPointerUp={(e) =>
+                                        sauvegarderTaux(f, Number((e.target as HTMLInputElement).value))
+                                      }
+                                      onKeyUp={(e) =>
+                                        sauvegarderTaux(f, Number((e.target as HTMLInputElement).value))
+                                      }
+                                      className="w-full accent-[#1C3359]"
+                                    />
+                                  </label>
                                 </li>
                               ))}
                             </ul>

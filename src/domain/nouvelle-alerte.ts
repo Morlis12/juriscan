@@ -1,15 +1,19 @@
 /**
  * JuriScan AI — Domaine « Nouvelle alerte » (pur, découplé de Next.js).
  *
- * Rôle : définir les 21 colonnes métier de la ligne d'alerte analysée.
+ * Rôle : définir les colonnes métier de la ligne d'alerte analysée.
  * Zéro donnée fictive : l'extraction vient exclusivement de POST /api/analyse
  * (Gemini réel) ou de la frappe clavier (saisie manuelle libre).
  *
+ * Répartition des rôles :
+ * - Le juridique renseigne le texte + coche les BU (nouvelle-alerte).
+ * - Chaque BU pilote sa conformité (preuves, actions, statut, responsable,
+ *   délai, taux) depuis l'approbation puis le tableau de bord.
+ *
  * Portabilité Dataverse / Power Pages :
  * - Table VeilleAlerte (12 champs) : alerte maîtresse.
- * - Table VeilleFiche (5 champs) : déclinaison par département.
- * - Table VeilleAction (4 champs) : plan d'amélioration.
- * Total = 21 colonnes éditables dans l'écran d'analyse.
+ * - Table VeilleFiche (5 champs + fluxStatut) : une fiche par BU cochée.
+ * - Table VeilleAction (4 champs) : plan d'amélioration piloté par la BU.
  */
 
 import type { ConformiteStatut, DepartementCode } from "@/domain/veille";

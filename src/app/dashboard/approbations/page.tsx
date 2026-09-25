@@ -22,6 +22,7 @@ interface ApiFiche {
   departement: DepartementCode;
   statutConformite: ConformiteStatut;
   fluxStatut?: FluxStatut;
+  preuveDifferee?: string | null;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
@@ -46,6 +47,7 @@ interface FicheApprobation extends MockAlerte {
   actionId: string | null;
   libelleAction: string;
   delai: string;
+  preuveDifferee: string;
 }
 
 const FLUX_DEMO: FluxStatut[] = [
@@ -73,6 +75,7 @@ export default function ApprobationsPage() {
   const [delai, setDelai] = useState("");
   const [taux, setTaux] = useState(25);
   const [statut, setStatut] = useState<ConformiteStatut>("PARTIELLEMENT_25");
+  const [preuveDifferee, setPreuveDifferee] = useState("");
   const [traitement, setTraitement] = useState(false);
 
   useEffect(() => {
@@ -101,6 +104,7 @@ export default function ApprobationsPage() {
               actionId: action?.id ?? null,
               libelleAction: action?.libelleAction ?? "",
               delai: (action?.delai ?? "").slice(0, 10),
+              preuveDifferee: f.preuveDifferee ?? "",
             });
           }
         }
@@ -124,6 +128,7 @@ export default function ApprobationsPage() {
         actionId: null,
         libelleAction: "",
         delai: "",
+        preuveDifferee: "",
       })),
     [],
   );
@@ -142,6 +147,7 @@ export default function ApprobationsPage() {
     setDelai(f.delai || "");
     setTaux(f.tauxAvancement || 25);
     setStatut(f.statut === "NON_CONFORME_0" ? "PARTIELLEMENT_25" : f.statut);
+    setPreuveDifferee(f.preuveDifferee || "");
     setMessage(null);
   }
 
@@ -185,6 +191,7 @@ export default function ApprobationsPage() {
         tauxAvancement: taux,
         libelleAction: libelleAction.trim(),
         delai,
+        preuveDifferee,
       };
       if (prev.some((p) => p.id === f.id)) {
         return prev.map((p) => (p.id === f.id ? maj : p));
@@ -201,6 +208,7 @@ export default function ApprobationsPage() {
           delai,
           tauxAvancement: taux,
           statutConformite: statut,
+          preuveDifferee,
           actionId: f.actionId,
         }),
       });
@@ -379,6 +387,18 @@ export default function ApprobationsPage() {
                           </select>
                         </label>
                       </div>
+                      <label className="block text-sm">
+                        <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                          Preuve de conformité différée (BU)
+                        </span>
+                        <textarea
+                          value={preuveDifferee}
+                          onChange={(e) => setPreuveDifferee(e.target.value)}
+                          rows={2}
+                          className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
+                          placeholder="Ex. Attestation à transmettre après l'audit de juin"
+                        />
+                      </label>
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"

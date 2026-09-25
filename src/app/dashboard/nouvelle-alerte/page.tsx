@@ -34,14 +34,6 @@ function texteOu(v: unknown, repli: string): string {
   return typeof v === "string" && v.trim() !== "" ? v : repli;
 }
 
-const STATUTS = [
-  { code: "NON_CONFORME_0", label: "Non conforme (0 %)" },
-  { code: "PARTIELLEMENT_25", label: "Partiellement — 25 %" },
-  { code: "PARTIELLEMENT_50", label: "Partiellement — 50 %" },
-  { code: "PARTIELLEMENT_75", label: "Partiellement — 75 %" },
-  { code: "CONFORME_100", label: "Conforme (100 %)" },
-] as const;
-
 const ACCEPT = ".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/png,image/jpeg,image/webp";
 
 function formatTaille(bytes: number): string {
@@ -87,7 +79,7 @@ export default function NouvelleAlertePage() {
     setMode(m);
     setErreur(null);
     setSaved(false);
-    // Saisie libre : panneau des 21 colonnes vierges, prêt au clavier.
+    // Saisie libre : texte + BU, prêt au clavier (la conformité est pilotée par les BU).
     if (m === "manuel" && !resultat) {
       setResultat(creerAlerteVierge());
       setTexteExtrait("");
@@ -142,7 +134,7 @@ export default function NouvelleAlertePage() {
         return;
       }
       const data = payload.data;
-      // Zéro mock : champs IA réels + base vierge = 21 colonnes à compléter.
+      // Zéro mock : texte IA réel + base vierge ; la conformité part à 0 % côté BU.
       // La recommandation BU (`propositionBU`, miroir `departement`) pré-remplit
       // le département responsable — le juridique reste décideur (workflow).
       const socle = creerAlerteVierge();
@@ -206,7 +198,7 @@ export default function NouvelleAlertePage() {
     setSaving(true);
     setErreur(null);
     try {
-      // Persistant : 21 colonnes → Prisma (Alerte + Fiche + Action).
+      // Persistant : texte + BU cochées → Prisma (Alerte + une Fiche par BU).
       const reponse = await fetch("/api/sauvegarde", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -311,14 +303,15 @@ export default function NouvelleAlertePage() {
             <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
               <h2 className="text-base font-bold text-brand-blue">1 · Saisie libre au clavier</h2>
               <p className="mt-1 text-xs text-slate-500">
-                Aucun document requis : remplissez directement les 21 colonnes vierges du panneau de droite.
+                Aucun document requis : renseignez le texte et cochez les BU
+                concernées dans le panneau de droite.
               </p>
               <ol className="mt-4 space-y-2 text-sm text-slate-700">
                 <li className="rounded-lg bg-slate-50 px-3 py-2">
                   <span className="font-bold text-brand-blue">1.</span> Saisissez le N° d&apos;ordre, la nature, la référence et le résumé.
                 </li>
                 <li className="rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="font-bold text-brand-blue">2.</span> Assignez le département responsable dans le menu déroulant.
+                  <span className="font-bold text-brand-blue">2.</span> Cochez les BU concernées (une fiche part chez chacune).
                 </li>
                 <li className="rounded-lg bg-slate-50 px-3 py-2">
                   <span className="font-bold text-brand-blue">3.</span> Cliquez sur « 💾 Enregistrer la Fiche de Veille ».
@@ -444,13 +437,13 @@ export default function NouvelleAlertePage() {
           )}
         </section>
 
-        {/* Colonne droite : 21 champs */}
+        {/* Colonne droite : texte + assignation BU */}
         <section className="rounded-xl border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-t-xl bg-brand-blue px-5 py-3">
             <h2 className="text-base font-bold text-white">
               {mode === "manuel"
-                ? "2 · Saisie — 21 colonnes vierges modifiables"
-                : "2 · Résultats — 21 colonnes pré-remplies et modifiables"}
+                ? "2 · Saisie — texte et BU concernées"
+                : "2 · Résultats — texte extrait et assignation BU"}
             </h2>
             {resultat && (
               <span className="rounded-full bg-brand-gold px-3 py-1 font-mono text-xs font-bold text-brand-blue">
@@ -464,9 +457,10 @@ export default function NouvelleAlertePage() {
               <p className="mx-auto max-w-sm">
                 Aucun résultat pour l&apos;instant. Chargez un PDF puis cliquez sur{" "}
                 <span className="font-semibold text-brand-blue">« Lancer l&apos;Analyse IA JuriScan »</span>, ou
-                basculez sur <span className="font-semibold text-brand-blue">« ✍️ Saisie Manuelle Libre »</span> : les
-                21 champs (N° d&apos;ordre, Nature du texte, Référence, Résumé, Libellé applicable…) apparaîtront ici,
-                prêts à remplir ou corriger.
+                basculez sur <span className="font-semibold text-brand-blue">« ✍️ Saisie Manuelle Libre »</span> : le
+                texte (N° d&apos;ordre, Nature, Référence, Résumé, Libellé applicable…) et les BU à cocher
+                apparaîtront ici. La conformité (preuves, actions, statut, responsable, délai, taux) sera
+                pilotée par chaque BU.
               </p>
             </div>
           ) : (
@@ -499,7 +493,7 @@ export default function NouvelleAlertePage() {
                 </label>
               </Bloc>
 
-              <Bloc titre="Fiche — assignation multi-BU (cases à cocher)">
+              <Bloc titre="Assignation — BU responsables (une fiche par BU cochée)">
                 {resultat.propositionBU && (
                   <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue sm:col-span-2">
                     🤖 Gemini 3.6 Flash recommande la BU :{" "}
@@ -508,6 +502,11 @@ export default function NouvelleAlertePage() {
                     les BU concernées ci-dessous (une fiche part chez chacune).
                   </p>
                 )}
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500 sm:col-span-2">
+                  Le juridique assigne uniquement : preuves, actions, statut,
+                  responsable, délai et taux d&apos;avancement sont pilotés par
+                  chaque BU (approbation puis tableau de bord).
+                </p>
                 <fieldset className="rounded-lg border-2 border-brand-gold/60 bg-brand-gold/10 px-3 py-2 text-sm sm:col-span-2">
                   <legend className="bg-white px-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
                     13 · BU responsables * ({resultat.departementsResponsables.length} cochée
@@ -540,44 +539,6 @@ export default function NouvelleAlertePage() {
                     </p>
                   )}
                 </fieldset>
-                <Zone label="14 · Actions conformité existantes" value={resultat.actionsExistantes} onChange={(v) => set("actionsExistantes", v)} compact />
-                <Zone label="15 · Preuves de conformité existantes" value={resultat.preuvesExistantes} onChange={(v) => set("preuvesExistantes", v)} compact />
-                <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    16 · Statut de conformité
-                  </span>
-                  <select
-                    value={resultat.statutConformite}
-                    onChange={(e) => set("statutConformite", e.target.value as AlerteAnalyse21["statutConformite"])}
-                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
-                  >
-                    {STATUTS.map((s) => (
-                      <option key={s.code} value={s.code}>
-                        {s.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <Zone label="17 · Preuve de conformité différée" value={resultat.preuveDifferee} onChange={(v) => set("preuveDifferee", v)} compact />
-              </Bloc>
-
-              <Bloc titre="Action d'amélioration (4 champs)">
-                <Zone label="18 · Action d'amélioration" value={resultat.libelleAction} onChange={(v) => set("libelleAction", v)} compact />
-                <Champ label="19 · Responsable" value={resultat.responsable} onChange={(v) => set("responsable", v)} />
-                <Champ label="20 · Délai" type="date" value={resultat.delai} onChange={(v) => set("delai", v)} />
-                <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
-                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    21 · Taux d&apos;avancement — {resultat.tauxAvancement} %
-                  </span>
-                  <input
-                    type="range"
-                    min={0}
-                    max={100}
-                    value={resultat.tauxAvancement}
-                    onChange={(e) => set("tauxAvancement", Number(e.target.value))}
-                    className="w-full accent-[#1C3359]"
-                  />
-                </label>
               </Bloc>
 
               {saved && (
