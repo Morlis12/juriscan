@@ -309,8 +309,10 @@ export default function ApprobationsPage() {
                         {f.resumeTexte}
                       </p>
                       <p className="mt-1 text-xs tabular-nums text-slate-500">
-                        Entrée en vigueur : {f.dateEntreeVigueur} · Conformité
-                        actuelle : {f.tauxAvancement} %
+                        Entrée en vigueur : {f.dateEntreeVigueur}
+                      </p>
+                      <p className="mt-1 text-xs font-bold tabular-nums text-brand-blue">
+                        Statut de conformité : {STATUTS_CONFORMITE.find((s) => s.code === f.statut)?.label ?? f.statut} · {f.tauxAvancement} %
                       </p>
                     </div>
                     <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800 ring-1 ring-inset ring-amber-600/20">
@@ -348,7 +350,7 @@ export default function ApprobationsPage() {
                           />
                         </label>
                         <label className="block text-sm">
-                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
                             Niveau de conformité — {taux} %
                           </span>
                           <input
@@ -361,13 +363,13 @@ export default function ApprobationsPage() {
                           />
                         </label>
                         <label className="block text-sm">
-                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                          <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
                             Statut de conformité
                           </span>
                           <select
                             value={statut}
                             onChange={(e) => setStatut(e.target.value as ConformiteStatut)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-semibold text-brand-blue"
                           >
                             {STATUTS_CONFORMITE.map((s) => (
                               <option key={s.code} value={s.code}>

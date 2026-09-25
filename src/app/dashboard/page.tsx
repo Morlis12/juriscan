@@ -107,6 +107,13 @@ function formatDateFR(iso: string): string {
   });
 }
 
+/** Couleur du niveau de conformité : vert ≥ 75 %, or 25-74 %, rouge < 25 %. */
+function couleurNiveau(taux: number): string {
+  if (taux >= 75) return "bg-emerald-500";
+  if (taux >= 25) return "bg-brand-gold";
+  return "bg-red-500";
+}
+
 export default function DashboardPage() {
   const [now, setNow] = useState<Date | null>(null);
   const [dbAlertes, setDbAlertes] = useState<AlertePilotee[]>([]);
@@ -294,21 +301,6 @@ export default function DashboardPage() {
     [actionsPerimetre],
   );
   const tauxMoyen = useMemo(() => tauxConformiteMoyen(alertes), [alertes]);
-
-  const histo = useMemo(() => {
-    const conforme = alertes.filter((a) => a.statut === "CONFORME_100").length;
-    const nonConforme = alertes.filter((a) => a.statut === "NON_CONFORME_0").length;
-    return [
-      { label: "Conforme", count: conforme, bar: "bg-emerald-500" },
-      { label: "Non Conforme", count: nonConforme, bar: "bg-red-500" },
-      {
-        label: "Partiellement Conforme",
-        count: alertes.length - conforme - nonConforme,
-        bar: "bg-brand-gold",
-      },
-    ];
-  }, [alertes]);
-  const histoMax = Math.max(1, ...histo.map((h) => h.count));
 
   const perimetreLabel =
     filtreBU === "ALL" ? "Vue générale" : DEPARTEMENTS[filtreBU as DepartementCode];
@@ -507,30 +499,69 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* HISTOGRAMME */}
+        {/* NIVEAU DE CONFORMITÉ PAR TEXTE — barres horizontales cliquables */}
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-bold text-brand-blue">
-            Textes par statut de conformité
+            Niveau de conformité par texte
           </h2>
-          <div className="mt-4 flex h-56 items-end justify-center gap-10 sm:gap-16">
-            {histo.map((h) => (
-              <div
-                key={h.label}
-                className="flex h-full w-24 flex-col items-center justify-end sm:w-32"
-              >
-                <span className="mb-1 text-lg font-bold text-brand-blue">
-                  {h.count}
-                </span>
-                <div
-                  className={`w-full rounded-t-lg ${h.bar}`}
-                  style={{ height: `${Math.max(4, (h.count / histoMax) * 100)}%` }}
-                />
-                <span className="mt-2 text-center text-xs font-medium text-slate-600">
-                  {h.label}
-                </span>
-              </div>
-            ))}
-          </div>
+          <p className="mt-1 text-xs text-slate-500">
+            Taux moyen des BU assignées à chaque texte — cliquez une barre pour
+            voir le détail par BU dans le tableau ci-dessous.
+          </p>
+          {groupes.length === 0 ? (
+            <p className="py-6 text-center text-sm text-slate-400">
+              Aucun texte sur ce périmètre.
+            </p>
+          ) : (
+            <ul className="mt-4 max-h-96 space-y-2 overflow-y-auto pr-1">
+              {groupes.map((g) => {
+                const actif = texteOuvert === g.numeroOrdre;
+                return (
+                  <li key={g.numeroOrdre}>
+                    <button
+                      type="button"
+                      onClick={() => setTexteOuvert(actif ? null : g.numeroOrdre)}
+                      title={`${g.referenceTexte} — voir le détail par BU`}
+                      className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                        actif
+                          ? "border-brand-gold bg-brand-gold/10"
+                          : "border-slate-100 bg-slate-50 hover:border-brand-blue/40 hover:bg-brand-blue/5"
+                      }`}
+                    >
+                      <span className="flex items-center justify-between gap-2 text-xs">
+                        <span className="min-w-0 truncate font-mono font-bold text-brand-blue">
+                          {g.numeroOrdre}
+                          <span className="ml-2 truncate font-sans font-medium text-slate-500">
+                            {g.referenceTexte} · {g.fiches.length} BU
+                          </span>
+                        </span>
+                        <span className="shrink-0 font-bold tabular-nums text-brand-blue">
+                          {g.tauxMoyen} %
+                        </span>
+                      </span>
+                      <span className="mt-1.5 block h-2.5 overflow-hidden rounded-full bg-slate-200">
+                        <span
+                          className={`block h-full rounded-full ${couleurNiveau(g.tauxMoyen)}`}
+                          style={{ width: `${g.tauxMoyen}%` }}
+                        />
+                      </span>
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+          <p className="mt-3 flex flex-wrap gap-3 text-[11px] font-medium text-slate-500">
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-emerald-500" /> ≥ 75 %
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-brand-gold" /> 25 – 74 %
+            </span>
+            <span className="flex items-center gap-1">
+              <span className="inline-block h-2.5 w-2.5 rounded-full bg-red-500" /> &lt; 25 %
+            </span>
+          </p>
         </section>
 
         {/* TABLEAU DE SUIVI — groupé par texte, conformité détaillée par BU */}
