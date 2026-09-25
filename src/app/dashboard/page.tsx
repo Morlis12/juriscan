@@ -61,6 +61,14 @@ const BU_OPTIONS: { code: DepartementCode; label: string }[] = [
   { code: "DILS", label: "DILS" },
 ];
 
+/** Pastilles du workflow à double validation (filtre + compteurs + résumé). */
+const FLUX_FILTRES: { code: FluxStatut; pastille: string }[] = [
+  { code: "ATTENTE_VALIDATION_JURIDIQUE", pastille: "bg-sky-500" },
+  { code: "ATTENTE_APPROBATION_METIER", pastille: "bg-amber-500" },
+  { code: "APPROUVE_METIER", pastille: "bg-emerald-500" },
+  { code: "REJETE_METIER", pastille: "bg-red-500" },
+];
+
 const BADGE: Record<MockAlerte["statut"], string> = {
   CONFORME_100:
     "bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-600/20",
@@ -123,6 +131,9 @@ export default function DashboardPage() {
   const [filtreBU, setFiltreBU] = useState<FiltreBUCode>("ALL");
   const [filtreDate, setFiltreDate] = useState("");
   const [filtreType, setFiltreType] = useState("ALL");
+  // Filtre workflow (approuvés / en attente / rejetés) + recherche libre.
+  const [filtreFlux, setFiltreFlux] = useState<"ALL" | FluxStatut>("ALL");
+  const [recherche, setRecherche] = useState("");
   // Texte déplié : affiche le niveau de conformité de chaque BU pour ce texte.
   const [texteOuvert, setTexteOuvert] = useState<string | null>(null);
 
@@ -228,14 +239,47 @@ export default function DashboardPage() {
     [toutesAlertes],
   );
 
-  const alertes = useMemo(() => {
+  const alertesBase = useMemo(() => {
+    const terme = recherche.trim().toLowerCase();
     return toutesAlertes.filter((a) => {
       if (filtreBU !== "ALL" && a.departement !== filtreBU) return false;
       if (filtreType !== "ALL" && a.natureTexte !== filtreType) return false;
       if (filtreDate && a.dateEntreeVigueur !== filtreDate) return false;
+      if (
+        terme &&
+        !`${a.numeroOrdre} ${a.referenceTexte} ${a.resumeTexte}`.toLowerCase().includes(terme)
+      )
+        return false;
       return true;
     });
-  }, [toutesAlertes, filtreBU, filtreType, filtreDate]);
+  }, [toutesAlertes, filtreBU, filtreType, filtreDate, recherche]);
+
+  // Filtre workflow : approuvés, en attente (juridique / métier), rejetés.
+  const alertes = useMemo(
+    () =>
+      filtreFlux === "ALL"
+        ? alertesBase
+        : alertesBase.filter((a) => a.fluxStatut === filtreFlux),
+    [alertesBase, filtreFlux],
+  );
+
+  // Compteurs du workflow (bandeau cliquable) sur tout le périmètre chargé.
+  const compteursFlux = useMemo(() => {
+    const compte: Record<FluxStatut, number> = {
+      ATTENTE_VALIDATION_JURIDIQUE: 0,
+      ATTENTE_APPROBATION_METIER: 0,
+      APPROUVE_METIER: 0,
+      REJETE_METIER: 0,
+    };
+    for (const a of toutesAlertes) compte[a.fluxStatut] += 1;
+    return compte;
+  }, [toutesAlertes]);
+
+  // Rejets à retraiter : ignorent le filtre workflow, suivent les autres filtres.
+  const rejets = useMemo(
+    () => alertesBase.filter((a) => a.fluxStatut === "REJETE_METIER"),
+    [alertesBase],
+  );
   /** Le juridique valide la fiche IA → bascule vers l'approbation métier. */
   async function validerVersMetier(id: string) {
     setDbAlertes((prev) =>
@@ -263,13 +307,22 @@ export default function DashboardPage() {
     dateEntreeVigueur: string;
     fiches: AlertePilotee[];
     tauxMoyen: number;
+    /** Fiches par statut du workflow — visibilité du suivi dans le tableau. */
+    flux: Record<FluxStatut, number>;
   }
   const groupes = useMemo<GroupeTexte[]>(() => {
     const carte = new Map<string, GroupeTexte>();
+    const fluxVide = (): Record<FluxStatut, number> => ({
+      ATTENTE_VALIDATION_JURIDIQUE: 0,
+      ATTENTE_APPROBATION_METIER: 0,
+      APPROUVE_METIER: 0,
+      REJETE_METIER: 0,
+    });
     for (const a of alertes) {
       const existant = carte.get(a.numeroOrdre);
       if (existant) {
         existant.fiches.push(a);
+        existant.flux[a.fluxStatut] += 1;
       } else {
         carte.set(a.numeroOrdre, {
           numeroOrdre: a.numeroOrdre,
@@ -279,6 +332,7 @@ export default function DashboardPage() {
           dateEntreeVigueur: a.dateEntreeVigueur,
           fiches: [a],
           tauxMoyen: 0,
+          flux: { ...fluxVide(), [a.fluxStatut]: 1 },
         });
       }
     }
@@ -305,12 +359,19 @@ export default function DashboardPage() {
   const perimetreLabel =
     filtreBU === "ALL" ? "Vue générale" : DEPARTEMENTS[filtreBU as DepartementCode];
 
-  const filtresActifs = filtreBU !== "ALL" || filtreType !== "ALL" || filtreDate !== "";
+  const filtresActifs =
+    filtreBU !== "ALL" ||
+    filtreType !== "ALL" ||
+    filtreDate !== "" ||
+    filtreFlux !== "ALL" ||
+    recherche.trim() !== "";
 
   function reinitialiserFiltres() {
     setFiltreBU("ALL");
     setFiltreType("ALL");
     setFiltreDate("");
+    setFiltreFlux("ALL");
+    setRecherche("");
   }
 
   return (
@@ -367,7 +428,7 @@ export default function DashboardPage() {
               </button>
             )}
           </div>
-          <div className="mt-3 grid gap-3 md:grid-cols-3">
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                 Filtrer par BU
@@ -413,16 +474,91 @@ export default function DashboardPage() {
                 ))}
               </select>
             </label>
+            <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Filtrer par statut workflow
+              </span>
+              <select
+                value={filtreFlux}
+                onChange={(e) => setFiltreFlux(e.target.value as "ALL" | FluxStatut)}
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue"
+              >
+                <option value="ALL">Tous les statuts</option>
+                {FLUX_FILTRES.map((f) => (
+                  <option key={f.code} value={f.code}>
+                    {FLUX_STATUT_LABELS[f.code]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm sm:col-span-2 lg:col-span-1">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Rechercher un texte
+              </span>
+              <input
+                type="search"
+                value={recherche}
+                onChange={(e) => setRecherche(e.target.value)}
+                placeholder="N° ordre, référence, mot-clé…"
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
+              />
+            </label>
           </div>
           {filtresActifs && (
             <p className="mt-2 text-xs text-slate-500">
               {alertes.length} résultat{alertes.length > 1 ? "s" : ""} après filtres
               {filtreBU !== "ALL" ? ` · BU : ${filtreBU}` : ""}
               {filtreType !== "ALL" ? ` · Type : ${filtreType}` : ""}
-              {filtreDate ? ` · Date : ${filtreDate}` : ""}.
+              {filtreDate ? ` · Date : ${filtreDate}` : ""}
+              {filtreFlux !== "ALL" ? ` · Workflow : ${FLUX_STATUT_LABELS[filtreFlux]}` : ""}
+              {recherche.trim() ? ` · Recherche : « ${recherche.trim()} »` : ""}.
             </p>
           )}
         </section>
+
+        {/* REJETS À RETRAITER — les BU ont refusé, le juridique retraite */}
+        {rejets.length > 0 && (
+          <section className="overflow-hidden rounded-xl border border-red-200 bg-white shadow-sm">
+            <h2 className="flex flex-wrap items-center justify-between gap-2 bg-red-600 px-5 py-3 text-base font-bold text-white">
+              <span>⚠ Rejets à retraiter — retour des BU ({rejets.length})</span>
+              <span className="text-xs font-medium text-red-100">
+                Modifiez (réassignation éventuelle) puis renvoyez vers la BU
+              </span>
+            </h2>
+            <ul className="divide-y divide-red-50">
+              {rejets.map((f) => (
+                <li
+                  key={f.id}
+                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 hover:bg-red-50/50"
+                >
+                  <div className="min-w-0">
+                    <p className="font-mono text-xs font-bold text-brand-blue">
+                      {f.numeroOrdre} · {f.departement}
+                    </p>
+                    <p className="line-clamp-1 text-xs text-slate-600">
+                      {f.referenceTexte}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Link
+                      href={`/dashboard/alertes/${f.id}`}
+                      className="rounded-lg border border-brand-blue px-3 py-1.5 text-xs font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
+                    >
+                      Modifier / réassigner
+                    </Link>
+                    <button
+                      type="button"
+                      onClick={() => validerVersMetier(f.id)}
+                      className="rounded-lg bg-brand-gold px-3 py-1.5 text-xs font-bold text-brand-blue shadow-sm transition-colors hover:brightness-95"
+                    >
+                      Renvoyer à la BU →
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
 
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-500">
@@ -499,6 +635,34 @@ export default function DashboardPage() {
           </div>
         </section>
 
+        {/* WORKFLOW — compteurs cliquables : filtrent le suivi par statut */}
+        <section aria-label="Workflow de validation" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {FLUX_FILTRES.map((f) => {
+            const actif = filtreFlux === f.code;
+            return (
+              <button
+                key={f.code}
+                type="button"
+                onClick={() => setFiltreFlux(actif ? "ALL" : f.code)}
+                title={`Filtrer : ${FLUX_STATUT_LABELS[f.code]}`}
+                className={`flex items-center gap-3 rounded-xl border bg-white p-4 text-left shadow-sm transition-all hover:-translate-y-0.5 hover:shadow ${
+                  actif ? "border-brand-gold ring-2 ring-brand-gold/60" : "border-slate-200"
+                }`}
+              >
+                <span className={`h-3 w-3 shrink-0 rounded-full ${f.pastille}`} />
+                <span className="min-w-0">
+                  <span className="block text-2xl font-black tabular-nums text-brand-blue">
+                    {compteursFlux[f.code]}
+                  </span>
+                  <span className="block truncate text-xs font-medium text-slate-500">
+                    {FLUX_STATUT_LABELS[f.code]}
+                  </span>
+                </span>
+              </button>
+            );
+          })}
+        </section>
+
         {/* NIVEAU DE CONFORMITÉ PAR TEXTE — barres horizontales cliquables */}
         <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-base font-bold text-brand-blue">
@@ -573,7 +737,7 @@ export default function DashboardPage() {
             Suivi des textes — {perimetreLabel} · Cliquez un texte pour voir chaque BU
           </h2>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[920px] text-left text-sm">
+            <table className="w-full min-w-[1080px] text-left text-sm">
               <thead>
                 <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3">N° Ordre</th>
@@ -583,6 +747,7 @@ export default function DashboardPage() {
                   <th className="px-4 py-3">BU concernées</th>
                   <th className="px-4 py-3">Taux moyen</th>
                   <th className="px-4 py-3">Conformité par BU</th>
+                  <th className="px-4 py-3">Workflow</th>
                 </tr>
               </thead>
               <tbody>
@@ -647,10 +812,32 @@ export default function DashboardPage() {
                             ))}
                           </span>
                         </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span className="flex items-center gap-1.5">
+                            {FLUX_FILTRES.map(
+                              ({ code, pastille }) =>
+                                g.flux[code] > 0 && (
+                                  <button
+                                    key={code}
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setFiltreFlux(filtreFlux === code ? "ALL" : code);
+                                    }}
+                                    title={`${FLUX_STATUT_LABELS[code]} : ${g.flux[code]} fiche(s) — cliquer pour filtrer`}
+                                    className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[11px] font-bold tabular-nums text-slate-700 hover:bg-brand-gold/40 hover:text-brand-blue"
+                                  >
+                                    <span className={`h-2 w-2 rounded-full ${pastille}`} />
+                                    {g.flux[code]}
+                                  </button>
+                                ),
+                            )}
+                          </span>
+                        </td>
                       </tr>
                       {ouvert && (
                         <tr className="bg-slate-50/70">
-                          <td colSpan={7} className="px-4 py-3">
+                          <td colSpan={8} className="px-4 py-3">
                             <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
                               Niveaux de conformité par BU — {g.numeroOrdre}
                             </p>
@@ -711,10 +898,10 @@ export default function DashboardPage() {
                 {groupes.length === 0 && (
                   <tr>
                     <td
-                      colSpan={7}
+                      colSpan={8}
                       className="px-4 py-8 text-center text-sm text-slate-400"
                     >
-                      Aucun texte sur ce périmètre. Ajustez les filtres BU / Date / Type.
+                      Aucun texte sur ce périmètre. Ajustez les filtres BU / Date / Type / Workflow.
                     </td>
                   </tr>
                 )}
