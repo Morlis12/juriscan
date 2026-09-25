@@ -48,10 +48,10 @@ type AlertePilotee = MockAlerte & {
   propositionBU?: string | null;
 };
 
-type TabCode = "ALL" | DepartementCode;
+type FiltreBUCode = "ALL" | DepartementCode;
 
-const TABS: { code: TabCode; label: string }[] = [
-  { code: "ALL", label: "Général" },
+/** Options du filtre par BU (l'onglet Général unique affiche tout par défaut). */
+const BU_OPTIONS: { code: DepartementCode; label: string }[] = [
   { code: "DJ", label: "DJ" },
   { code: "DAF", label: "DAF" },
   { code: "DRH", label: "DRH" },
@@ -108,13 +108,12 @@ function formatDateFR(iso: string): string {
 }
 
 export default function DashboardPage() {
-  const [tab, setTab] = useState<TabCode>("ALL");
   const [now, setNow] = useState<Date | null>(null);
   const [dbAlertes, setDbAlertes] = useState<AlertePilotee[]>([]);
   const [dbActions, setDbActions] = useState<MockAction[]>([]);
   const [confirmation, setConfirmation] = useState<string | null>(null);
-  // Filtres multicritères du pilotage juridique (synchronisés avec les onglets BU).
-  const [filtreBU, setFiltreBU] = useState<TabCode>("ALL");
+  // Vue générale unique + filtres multicritères du pilotage juridique.
+  const [filtreBU, setFiltreBU] = useState<FiltreBUCode>("ALL");
   const [filtreDate, setFiltreDate] = useState("");
   const [filtreType, setFiltreType] = useState("ALL");
 
@@ -220,20 +219,14 @@ export default function DashboardPage() {
     [toutesAlertes],
   );
 
-  function choisirBU(code: TabCode) {
-    setTab(code);
-    setFiltreBU(code);
-  }
-
   const alertes = useMemo(() => {
-    const bu = filtreBU !== "ALL" ? filtreBU : tab;
     return toutesAlertes.filter((a) => {
-      if (bu !== "ALL" && a.departement !== bu) return false;
+      if (filtreBU !== "ALL" && a.departement !== filtreBU) return false;
       if (filtreType !== "ALL" && a.natureTexte !== filtreType) return false;
       if (filtreDate && a.dateEntreeVigueur !== filtreDate) return false;
       return true;
     });
-  }, [toutesAlertes, tab, filtreBU, filtreType, filtreDate]);
+  }, [toutesAlertes, filtreBU, filtreType, filtreDate]);
 
   /** Le juridique valide la fiche IA → bascule vers l'approbation métier. */
   async function validerVersMetier(id: string) {
@@ -280,20 +273,19 @@ export default function DashboardPage() {
   const histoMax = Math.max(1, ...histo.map((h) => h.count));
 
   const perimetreLabel =
-    tab === "ALL" ? "Toutes directions" : DEPARTEMENTS[tab as DepartementCode];
+    filtreBU === "ALL" ? "Vue générale" : DEPARTEMENTS[filtreBU as DepartementCode];
 
   const filtresActifs = filtreBU !== "ALL" || filtreType !== "ALL" || filtreDate !== "";
 
   function reinitialiserFiltres() {
     setFiltreBU("ALL");
-    setTab("ALL");
     setFiltreType("ALL");
     setFiltreDate("");
   }
 
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* EN-TÊTE FIXE AGL — pilotage unique du juridique */}
+      {/* EN-TÊTE FIXE AGL — vue générale unique du pilotage juridique */}
       <header className="sticky top-0 z-50 backdrop-blur-md bg-brand-blue/95 text-white shadow-md">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
@@ -326,25 +318,6 @@ export default function DashboardPage() {
             </span>
           </div>
         </div>
-        {/* SÉLECTEUR DE DÉPARTEMENT */}
-        <nav className="border-t border-white/10 bg-brand-blue/80">
-          <div className="mx-auto flex max-w-7xl gap-1 overflow-x-auto px-4 py-2">
-            {TABS.map((t) => (
-              <button
-                key={t.code}
-                type="button"
-                onClick={() => choisirBU(t.code)}
-                className={`whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
-                  tab === t.code
-                    ? "bg-brand-gold text-brand-blue shadow"
-                    : "text-slate-200 hover:bg-white/10 hover:text-white"
-                }`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        </nav>
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
@@ -371,11 +344,11 @@ export default function DashboardPage() {
               </span>
               <select
                 value={filtreBU}
-                onChange={(e) => choisirBU(e.target.value as TabCode)}
+                onChange={(e) => setFiltreBU(e.target.value as FiltreBUCode)}
                 className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue"
               >
                 <option value="ALL">Toutes les BU</option>
-                {TABS.filter((t) => t.code !== "ALL").map((t) => (
+                {BU_OPTIONS.map((t) => (
                   <option key={t.code} value={t.code}>
                     {t.label}
                   </option>
