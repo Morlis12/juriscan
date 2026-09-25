@@ -275,10 +275,10 @@ export default function DashboardPage() {
     return compte;
   }, [toutesAlertes]);
 
-  // Rejets à retraiter : ignorent le filtre workflow, suivent les autres filtres.
-  const rejets = useMemo(
-    () => alertesBase.filter((a) => a.fluxStatut === "REJETE_METIER"),
-    [alertesBase],
+  // Compteur de rejets (bouton vers la page dédiée) sur tout le périmètre.
+  const nbRejets = useMemo(
+    () => toutesAlertes.filter((a) => a.fluxStatut === "REJETE_METIER").length,
+    [toutesAlertes],
   );
   /** Le juridique valide la fiche IA → bascule vers l'approbation métier. */
   async function validerVersMetier(id: string) {
@@ -394,6 +394,12 @@ export default function DashboardPage() {
             <span className="font-mono tabular-nums text-slate-100">
               {timeStr}
             </span>
+            <Link
+              href="/dashboard/rejets"
+              className="rounded-full bg-red-500 px-4 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-red-600"
+            >
+              ⚠ Rejets{nbRejets > 0 ? ` (${nbRejets})` : ""}
+            </Link>
             <Link
               href="/dashboard/approbations"
               className="rounded-full bg-brand-gold px-4 py-1.5 text-xs font-bold text-brand-blue shadow transition-colors hover:brightness-95"
@@ -516,50 +522,6 @@ export default function DashboardPage() {
           )}
         </section>
 
-        {/* REJETS À RETRAITER — les BU ont refusé, le juridique retraite */}
-        {rejets.length > 0 && (
-          <section className="overflow-hidden rounded-xl border border-red-200 bg-white shadow-sm">
-            <h2 className="flex flex-wrap items-center justify-between gap-2 bg-red-600 px-5 py-3 text-base font-bold text-white">
-              <span>⚠ Rejets à retraiter — retour des BU ({rejets.length})</span>
-              <span className="text-xs font-medium text-red-100">
-                Modifiez (réassignation éventuelle) puis renvoyez vers la BU
-              </span>
-            </h2>
-            <ul className="divide-y divide-red-50">
-              {rejets.map((f) => (
-                <li
-                  key={f.id}
-                  className="flex flex-wrap items-center justify-between gap-3 px-5 py-3 hover:bg-red-50/50"
-                >
-                  <div className="min-w-0">
-                    <p className="font-mono text-xs font-bold text-brand-blue">
-                      {f.numeroOrdre} · {f.departement}
-                    </p>
-                    <p className="line-clamp-1 text-xs text-slate-600">
-                      {f.referenceTexte}
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <Link
-                      href={`/dashboard/alertes/${f.id}`}
-                      className="rounded-lg border border-brand-blue px-3 py-1.5 text-xs font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
-                    >
-                      Modifier / réassigner
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => validerVersMetier(f.id)}
-                      className="rounded-lg bg-brand-gold px-3 py-1.5 text-xs font-bold text-brand-blue shadow-sm transition-colors hover:brightness-95"
-                    >
-                      Renvoyer à la BU →
-                    </button>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          </section>
-        )}
-
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-500">
             Périmètre : <span className="font-semibold text-brand-blue">{perimetreLabel}</span>
@@ -568,6 +530,12 @@ export default function DashboardPage() {
             {alertes.length > 1 ? "s" : ""} BU
           </p>
           <div className="flex flex-wrap gap-2">
+            <Link
+              href="/dashboard/rejets"
+              className="rounded-lg border border-red-500 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-600 hover:text-white"
+            >
+              ⚠ Rejets{nbRejets > 0 ? ` (${nbRejets})` : ""}
+            </Link>
             <Link
               href="/dashboard/approbations"
               className="rounded-lg border border-brand-blue px-4 py-2 text-sm font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
