@@ -3,8 +3,8 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
-import { CONFORMITE_STATUTS, DEPARTEMENT_CODES } from "@/domain/veille";
+import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/veille";
+import { CONFORMITE_STATUTS, DEPARTEMENT_CODES, NATURES_TEXTE } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
   creerAlerteVierge,
@@ -174,6 +174,7 @@ export default function NouvelleAlertePage() {
         [
           `—— Analyse JuriScan (Gemini 3.6 Flash) : ${file.name} ——`,
           "",
+          `Nature déduite : ${analyse.natureTexte || "—"}`,
           `Référence : ${analyse.referenceTexte}`,
           `Résumé : ${analyse.resumeTexte}`,
           "",
@@ -468,7 +469,31 @@ export default function NouvelleAlertePage() {
               <Bloc titre="Alerte — texte source (12 champs)">
                 <Champ label="01 · N° d'ordre" value={resultat.numeroOrdre} onChange={(v) => set("numeroOrdre", v)} mono />
                 <Champ label="02 · QSSTE" value={resultat.qssfte} onChange={(v) => set("qssfte", v)} mono />
-                <Champ label="03 · Nature du texte" value={resultat.natureTexte} onChange={(v) => set("natureTexte", v)} />
+                <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    03 · Nature du texte (déduite par l&apos;IA)
+                  </span>
+                  <select
+                    value={NATURES_TEXTE.includes(resultat.natureTexte as NatureTexte) ? resultat.natureTexte : ""}
+                    onChange={(e) => set("natureTexte", e.target.value)}
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white"
+                  >
+                    <option value="" disabled>
+                      — Choisir la nature —
+                    </option>
+                    {NATURES_TEXTE.map((n) => (
+                      <option key={n} value={n}>
+                        {n}
+                      </option>
+                    ))}
+                    {resultat.natureTexte &&
+                      !NATURES_TEXTE.includes(resultat.natureTexte as NatureTexte) && (
+                        <option value={resultat.natureTexte}>
+                          {resultat.natureTexte}
+                        </option>
+                      )}
+                  </select>
+                </label>
                 <Champ label="04 · Référence du texte" value={resultat.referenceTexte} onChange={(v) => set("referenceTexte", v)} />
                 <Champ label="05 · Article" value={resultat.article} onChange={(v) => set("article", v)} />
                 <Zone label="06 · Résumé du texte (IA)" value={resultat.resumeTexte} onChange={(v) => set("resumeTexte", v)} />

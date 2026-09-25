@@ -37,6 +37,24 @@ export const DEPARTEMENTS: Record<DepartementCode, string> = {
 
 export const DEPARTEMENT_CODES = Object.keys(DEPARTEMENTS) as DepartementCode[];
 
+/**
+ * Natures de texte déduites par Gemini 3.6 Flash dès l'OCR (liste fermée).
+ * Règles : Loi (votée, « Loi n°… »), Ordonnance, Décret (« Décret n°… »,
+ * Conseil des ministres), Arrêté (ministériel, « Arrêté n°… »), Circulaire
+ * (instruction), Décision, Autre (si indéterminé — le juridique corrige).
+ */
+export const NATURES_TEXTE = [
+  "Loi",
+  "Ordonnance",
+  "Décret",
+  "Arrêté",
+  "Circulaire",
+  "Décision",
+  "Autre",
+] as const;
+
+export type NatureTexte = (typeof NATURES_TEXTE)[number];
+
 /** Statut de conformité — liste d'options (colonnes Excel d'origine). */
 export type ConformiteStatut =
   | "CONFORME_100"

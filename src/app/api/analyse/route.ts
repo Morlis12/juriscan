@@ -20,6 +20,35 @@ function normaliserBU(v: unknown): string | null {
   return (BU_AUTORISEES as readonly string[]).includes(code) ? code : null;
 }
 
+/**
+ * Ramène la nature déduite par l'IA vers la liste fermée (insensible aux
+ * accents/casse). Le libellé brut est conservé si vraiment inconnu — le
+ * juridique tranche via la liste déroulante (jamais de « Type de document »).
+ */
+function normaliserNature(v: unknown): string {
+  if (typeof v !== "string") return "";
+  const brut = v.trim();
+  if (!brut) return "";
+  const cle = brut
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+  // Le plus spécifique d'abord : un décret d'application peut citer « la loi ».
+  const table: [string, string][] = [
+    ["Décret", "decret"],
+    ["Arrêté", "arrete"],
+    ["Ordonnance", "ordonnance"],
+    ["Circulaire", "circulaire"],
+    ["Décision", "decision"],
+    ["Loi", "loi"],
+    ["Autre", "autre"],
+  ];
+  for (const [canon, mot] of table) {
+    if (cle.includes(mot)) return canon;
+  }
+  return brut;
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -38,14 +67,14 @@ export async function POST(req: Request) {
     // APPEL OCR ET MULTIMODAL ULTRA-STABLE VIA LE SDK VERCEL AI
     const response = await generateText({
       model: google('gemini-3.6-flash'),
-      system: "Tu es l'expert en OCR d'Africa Global Logistics (AGL CI). Analyse le document reçu (décret, arrêté, loi, circulaire, Journal Officiel) et extrais fidèlement ses informations réelles sans rien inventer. Tu participes au workflow à double validation JuriScan × JuriDesk : après l'OCR, tu recommandes la Business Unit la plus probable pour traiter le texte.",
+      system: "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). Analyse le document reçu (Journal Officiel, décret, arrêté, loi, circulaire) et extrais fidèlement ses informations réelles sans rien inventer. Tu dois systématiquement DÉDUIRE la nature juridique du texte d'après son intitulé et son contenu. Tu participes au workflow à double validation JuriScan × JuriDesk : après l'OCR, tu recommandes la Business Unit la plus probable pour traiter le texte.",
       messages: [
         {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: "Analyse le document joint et extrais ses métadonnées sous ce format JSON brut strict (sans bloc markdown autour, sans écrire ```json) : { \"numeroOrdre\": \"AGL-2026-056\", \"qssfte\": \"\", \"natureTexte\": \"Décret | Arrêté | Loi | Ordonnance | Circulaire | Décision | Type de document\", \"referenceTexte\": \"Référence officielle ou Titre principal\", \"article\": \"\", \"resumeTexte\": \"Résumé précis du contenu réel du fichier\", \"libelleApplicable\": \"Libellé complet de la version en vigueur\", \"moyenCommunication\": \"\", \"dateEntreeVigueur\": \"YYYY-MM-DD ou chaîne vide\", \"propositionBU\": \"DJ | DRH | DAF | DQHSE | PATR_IMMO | DILS — la BU la plus probable au vu du contenu (ex : droit du travail → DRH, fiscalité → DAF, environnement/sécurité → DQHSE, foncier/immobilier → PATR_IMMO, douane/logistique → DILS, contrats/contentieux/données → DJ)\", \"departement\": \"(miroir de propositionBU, même valeur)\", \"statutConformite\": \"NON_CONFORME_0\", \"actionsAmelioration\": \"Première action de mise en conformité suggérée ou chaîne vide\" }"
+              text: "Analyse le document joint et extrais ses métadonnées sous ce format JSON brut strict (sans bloc markdown autour, sans écrire ```json) : { \"numeroOrdre\": \"AGL-2026-056\", \"qssfte\": \"\", \"natureTexte\": \"UNE SEULE valeur exacte parmi : Loi | Ordonnance | Décret | Arrêté | Circulaire | Décision | Autre — déduis-la ainsi : Loi si texte voté commençant par 'Loi n°' ; Ordonnance si 'Ordonnance n°' ; Décret si signé en Conseil des ministres commençant par 'Décret n°' ; Arrêté si ministériel ou interministériel commençant par 'Arrêté' ; Circulaire si note d'instruction ou d'information ; Décision si acte individuel ; Autre seulement si vraiment indéterminé (jamais 'Type de document')\", \"referenceTexte\": \"Référence officielle ou Titre principal\", \"article\": \"\", \"resumeTexte\": \"Résumé précis du contenu réel du fichier\", \"libelleApplicable\": \"Libellé complet de la version en vigueur\", \"moyenCommunication\": \"\", \"dateEntreeVigueur\": \"YYYY-MM-DD ou chaîne vide\", \"propositionBU\": \"DJ | DRH | DAF | DQHSE | PATR_IMMO | DILS — la BU la plus probable au vu du contenu (ex : droit du travail → DRH, fiscalité → DAF, environnement/sécurité → DQHSE, foncier/immobilier → PATR_IMMO, douane/logistique → DILS, contrats/contentieux/données → DJ)\", \"departement\": \"(miroir de propositionBU, même valeur)\", \"statutConformite\": \"NON_CONFORME_0\", \"actionsAmelioration\": \"Première action de mise en conformité suggérée ou chaîne vide\" }"
             },
             {
               type: 'image',
@@ -69,6 +98,8 @@ export async function POST(req: Request) {
       normaliserBU(brut.propositionBU) ?? normaliserBU(brut.departement);
     const donnees = {
       ...brut,
+      // Nature déduite par l'IA, ramenée à la liste fermée (Loi, Décret…).
+      natureTexte: normaliserNature(brut.natureTexte),
       propositionBU,
       // Compatibilité avec l'écran nouvelle-alerte (lit `departement`) : miroir validé.
       departement: propositionBU ?? (typeof brut.departement === "string" ? brut.departement : ""),
