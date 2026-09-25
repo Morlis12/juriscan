@@ -32,7 +32,13 @@ export async function GET() {
       take: 100,
       include: {
         fichesDepartements: {
-          include: { actionsAmelioration: { orderBy: { createdAt: "desc" }, take: 1 } },
+          include: {
+            actionsAmelioration: {
+              orderBy: { createdAt: "desc" },
+              take: 1,
+              include: { responsable: { select: { email: true } } },
+            },
+          },
         },
       },
     });

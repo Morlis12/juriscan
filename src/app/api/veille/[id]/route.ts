@@ -187,8 +187,9 @@ export async function PUT(
  *
  * - Juridique : { fluxStatut: "ATTENTE_APPROBATION_METIER" } (valide vers la BU).
  * - BU : { fluxStatut: "REJETE_METIER" } (renvoie au juridique).
- * - BU : { fluxStatut: "APPROUVE_METIER", libelleAction, delai, tauxAvancement (0-100),
- *         statutConformite, preuveDifferee } (approuve et initialise la conformité).
+ * - BU : { fluxStatut: "APPROUVE_METIER", libelleAction, responsable (email User),
+ *         delai, tauxAvancement (0-100), statutConformite, preuveDifferee,
+ *         actionsExistantes, preuvesExistantes } (approuve et remplit la conformité).
  * - BU (tableau de bord ou approbation) : { tauxAvancement } seul, { preuveDifferee }
  *   seule, etc. — la BU pilote son avancement sans changer de statut de flux.
  * Champs de conformité réservés aux BU (jamais renseignés à l'assignation).
@@ -213,6 +214,9 @@ export async function PATCH(
       tauxAvancement?: unknown;
       statutConformite?: unknown;
       preuveDifferee?: unknown;
+      actionsExistantes?: unknown;
+      preuvesExistantes?: unknown;
+      responsable?: unknown;
       actionId?: unknown;
     };
     // fluxStatut optionnel : absent = simple pilotage BU (taux, preuve…), flux inchangé.
@@ -247,6 +251,24 @@ export async function PATCH(
     const preuveDifferee =
       typeof b.preuveDifferee === "string" ? b.preuveDifferee.trim() || null : undefined;
 
+    // Responsable libre (email d'un User existant pour rattacher), comme en PUT.
+    let responsableId: string | undefined;
+    let responsableNonLie = false;
+    const respTexte =
+      typeof b.responsable === "string" ? b.responsable.trim() : "";
+    if (respTexte) {
+      if (respTexte.includes("@")) {
+        const user = await prisma.user.findUnique({
+          where: { email: respTexte },
+          select: { id: true },
+        });
+        if (user) responsableId = user.id;
+        else responsableNonLie = true;
+      } else {
+        responsableNonLie = true;
+      }
+    }
+
     const libelleAction =
       typeof b.libelleAction === "string" ? b.libelleAction.trim() : "";
     const taux =
@@ -264,19 +286,27 @@ export async function PATCH(
           ...(fluxStatut ? { fluxStatut } : {}),
           ...(statutConformite ? { statutConformite } : {}),
           ...(preuveDifferee !== undefined ? { preuveDifferee } : {}),
+          ...(typeof b.actionsExistantes === "string"
+            ? { actionsExistantes: b.actionsExistantes.trim() || null }
+            : {}),
+          ...(typeof b.preuvesExistantes === "string"
+            ? { preuvesExistantes: b.preuvesExistantes.trim() || null }
+            : {}),
         },
       });
-      // La BU pilote sa conformité : action, délai, taux 0-100 % (création si besoin).
+      // La BU pilote sa conformité : action, responsable, délai, taux 0-100 % (création si besoin).
       // Seules les clés fournies sont écrites — jamais d'écrasement par null implicite.
-      if (libelleAction || taux !== null || delaiRaw || actionId) {
+      if (libelleAction || taux !== null || delaiRaw || respTexte || actionId) {
         const donneesAction: {
           libelleAction?: string;
           delai?: Date | null;
           tauxAvancement?: number;
+          responsableId?: string;
         } = {};
         if (libelleAction) donneesAction.libelleAction = libelleAction;
         if (delaiRaw) donneesAction.delai = dateOuNull(delaiRaw);
         if (taux !== null) donneesAction.tauxAvancement = taux;
+        if (responsableId) donneesAction.responsableId = responsableId;
         if (actionId) {
           await tx.veilleAction.update({
             where: { id: actionId },
@@ -289,13 +319,14 @@ export async function PATCH(
               libelleAction: libelleAction || "Action de conformité à préciser",
               delai: delaiRaw ? dateOuNull(delaiRaw) : null,
               tauxAvancement: taux ?? 0,
+              ...(responsableId ? { responsableId } : {}),
             },
           });
         }
       }
     });
 
-    return NextResponse.json({ success: true, ...(fluxStatut ? { fluxStatut } : {}) });
+    return NextResponse.json({ success: true, ...(fluxStatut ? { fluxStatut } : {}), responsableNonLie });
   } catch (error) {
     console.error("Erreur serveur API Veille (PATCH [id]) :", error);
     const message = error instanceof Error ? error.message : "Erreur interne";

@@ -23,20 +23,27 @@ interface ApiFiche {
   statutConformite: ConformiteStatut;
   fluxStatut?: FluxStatut;
   preuveDifferee?: string | null;
+  actionsExistantes?: string | null;
+  preuvesExistantes?: string | null;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
     delai: string | null;
     tauxAvancement: number;
+    responsable?: { email: string } | null;
   }[];
 }
 
 interface ApiAlerte {
   id: string;
   numeroOrdre: string;
+  qssfte?: string | null;
   natureTexte: string;
   referenceTexte: string;
+  article?: string | null;
   resumeTexte: string;
+  libelleApplicable?: string;
+  moyenCommunication?: string | null;
   dateEntreeVigueur: string | null;
   createdAt: string;
   fichesDepartements: ApiFiche[];
@@ -45,7 +52,16 @@ interface ApiAlerte {
 interface FicheApprobation extends MockAlerte {
   fluxStatut: FluxStatut;
   actionId: string | null;
+  // Texte assigné (lecture seule — déjà rempli à l'assignation).
+  article: string;
+  libelleApplicable: string;
+  moyenCommunication: string;
+  qssfte: string;
+  // Champs BU (à remplir / compléter à l'approbation).
+  actionsExistantes: string;
+  preuvesExistantes: string;
   libelleAction: string;
+  responsable: string;
   delai: string;
   preuveDifferee: string;
 }
@@ -72,10 +88,14 @@ export default function ApprobationsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [formOuvert, setFormOuvert] = useState<string | null>(null);
   const [libelleAction, setLibelleAction] = useState("");
+  const [responsable, setResponsable] = useState("");
   const [delai, setDelai] = useState("");
   const [taux, setTaux] = useState(25);
   const [statut, setStatut] = useState<ConformiteStatut>("PARTIELLEMENT_25");
   const [preuveDifferee, setPreuveDifferee] = useState("");
+  const [actionsExistantes, setActionsExistantes] = useState("");
+  const [preuvesExistantes, setPreuvesExistantes] = useState("");
+  const [noteResp, setNoteResp] = useState(false);
   const [traitement, setTraitement] = useState(false);
 
   useEffect(() => {
@@ -102,7 +122,14 @@ export default function ApprobationsPage() {
                 : CONFORMITE_POURCENTAGE[f.statutConformite],
               fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
               actionId: action?.id ?? null,
+              article: a.article ?? "",
+              libelleApplicable: a.libelleApplicable ?? "",
+              moyenCommunication: a.moyenCommunication ?? "",
+              qssfte: a.qssfte ?? "",
+              actionsExistantes: f.actionsExistantes ?? "",
+              preuvesExistantes: f.preuvesExistantes ?? "",
               libelleAction: action?.libelleAction ?? "",
+              responsable: action?.responsable?.email ?? "",
               delai: (action?.delai ?? "").slice(0, 10),
               preuveDifferee: f.preuveDifferee ?? "",
             });
@@ -126,7 +153,14 @@ export default function ApprobationsPage() {
         ...m,
         fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
         actionId: null,
+        article: "",
+        libelleApplicable: "",
+        moyenCommunication: "",
+        qssfte: "",
+        actionsExistantes: "",
+        preuvesExistantes: "",
         libelleAction: "",
+        responsable: "",
         delai: "",
         preuveDifferee: "",
       })),
@@ -144,10 +178,14 @@ export default function ApprobationsPage() {
   function ouvrirFormulaire(f: FicheApprobation) {
     setFormOuvert(f.id);
     setLibelleAction(f.libelleAction || "");
+    setResponsable(f.responsable || "");
     setDelai(f.delai || "");
     setTaux(f.tauxAvancement || 25);
     setStatut(f.statut === "NON_CONFORME_0" ? "PARTIELLEMENT_25" : f.statut);
     setPreuveDifferee(f.preuveDifferee || "");
+    setActionsExistantes(f.actionsExistantes || "");
+    setPreuvesExistantes(f.preuvesExistantes || "");
+    setNoteResp(false);
     setMessage(null);
   }
 
@@ -183,6 +221,7 @@ export default function ApprobationsPage() {
     }
     setTraitement(true);
     setMessage(null);
+    setNoteResp(false);
     setFiches((prev) => {
       const maj: FicheApprobation = {
         ...f,
@@ -190,8 +229,11 @@ export default function ApprobationsPage() {
         statut,
         tauxAvancement: taux,
         libelleAction: libelleAction.trim(),
+        responsable: responsable.trim(),
         delai,
         preuveDifferee,
+        actionsExistantes,
+        preuvesExistantes,
       };
       if (prev.some((p) => p.id === f.id)) {
         return prev.map((p) => (p.id === f.id ? maj : p));
@@ -199,19 +241,27 @@ export default function ApprobationsPage() {
       return [...prev, maj];
     });
     try {
-      await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
+      const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           fluxStatut: "APPROUVE_METIER",
           libelleAction: libelleAction.trim(),
+          responsable: responsable.trim(),
           delai,
           tauxAvancement: taux,
           statutConformite: statut,
           preuveDifferee,
+          actionsExistantes,
+          preuvesExistantes,
           actionId: f.actionId,
         }),
       });
+      const payload = (await reponse.json()) as {
+        success?: boolean;
+        responsableNonLie?: boolean;
+      };
+      if (payload.responsableNonLie) setNoteResp(true);
     } catch {
       /* démo locale : transition optimiste suffisante */
     } finally {
@@ -329,76 +379,149 @@ export default function ApprobationsPage() {
                   </div>
 
                   {formOuvert === f.id ? (
-                    <div className="grid gap-3 rounded-xl border border-brand-gold/60 bg-brand-gold/10 p-4">
+                    <div className="grid gap-4 rounded-xl border border-brand-gold/60 bg-brand-gold/10 p-4">
                       <p className="text-xs font-bold uppercase tracking-wide text-brand-blue">
-                        Initialiser la conformité (réservé à {bu})
+                        Approuver et remplir la conformité (réservé à {bu})
                       </p>
-                      <label className="block text-sm">
-                        <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                          Action de mise en conformité *
-                        </span>
-                        <textarea
-                          value={libelleAction}
-                          onChange={(e) => setLibelleAction(e.target.value)}
-                          rows={2}
-                          className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
-                          placeholder="Ex. Mettre à jour le règlement intérieur et former les managers"
-                        />
-                      </label>
-                      <div className="grid gap-3 sm:grid-cols-3">
+                      {noteResp && (
+                        <p className="rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                          Responsable non rattaché (aucun User avec cet email) — autres champs enregistrés.
+                        </p>
+                      )}
+                      {/* Texte assigné — déjà rempli, lecture seule */}
+                      <fieldset className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <legend className="bg-white px-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                          Texte assigné par le juridique (lecture seule)
+                        </legend>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <Lecture label="N° d'ordre" valeur={f.numeroOrdre} mono />
+                          <Lecture label="Nature du texte" valeur={f.natureTexte} />
+                        </div>
+                        <Lecture label="Référence du texte" valeur={f.referenceTexte} />
+                        <Lecture label="Résumé du texte" valeur={f.resumeTexte} />
+                        <Lecture label="Libellé applicable" valeur={f.libelleApplicable || "—"} />
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <Lecture label="Article" valeur={f.article || "—"} />
+                          <Lecture label="Entrée en vigueur" valeur={f.dateEntreeVigueur || "—"} />
+                          <Lecture label="Moyen de communication" valeur={f.moyenCommunication || "—"} />
+                        </div>
+                      </fieldset>
+                      {/* Conformité BU — à remplir / compléter */}
+                      <fieldset className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <legend className="bg-white px-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                          Conformité {bu} — à remplir
+                        </legend>
                         <label className="block text-sm">
                           <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                            Délai
+                            Actions conformité existantes
                           </span>
-                          <input
-                            type="date"
-                            value={delai}
-                            onChange={(e) => setDelai(e.target.value)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800"
+                          <textarea
+                            value={actionsExistantes}
+                            onChange={(e) => setActionsExistantes(e.target.value)}
+                            rows={2}
+                            className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
+                            placeholder="Ex. Registre des traitements déjà tenu à jour"
                           />
                         </label>
                         <label className="block text-sm">
-                          <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
-                            Niveau de conformité — {taux} %
+                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Preuves de conformité existantes
                           </span>
-                          <input
-                            type="range"
-                            min={0}
-                            max={100}
-                            value={taux}
-                            onChange={(e) => setTaux(Number(e.target.value))}
-                            className="w-full accent-[#1C3359]"
+                          <textarea
+                            value={preuvesExistantes}
+                            onChange={(e) => setPreuvesExistantes(e.target.value)}
+                            rows={2}
+                            className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
+                            placeholder="Ex. PV du comité de conformité du 12/03"
                           />
                         </label>
+                        <div className="grid gap-3 sm:grid-cols-2">
+                          <label className="block text-sm">
+                            <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                              Statut de conformité
+                            </span>
+                            <select
+                              value={statut}
+                              onChange={(e) => setStatut(e.target.value as ConformiteStatut)}
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-semibold text-brand-blue"
+                            >
+                              {STATUTS_CONFORMITE.map((s) => (
+                                <option key={s.code} value={s.code}>
+                                  {s.label}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                              Preuve de conformité différée
+                            </span>
+                            <textarea
+                              value={preuveDifferee}
+                              onChange={(e) => setPreuveDifferee(e.target.value)}
+                              rows={2}
+                              className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
+                              placeholder="Ex. Attestation à transmettre après l'audit de juin"
+                            />
+                          </label>
+                        </div>
+                      </fieldset>
+                      {/* Plan d'action BU */}
+                      <fieldset className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3">
+                        <legend className="bg-white px-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                          Plan d&apos;action {bu}
+                        </legend>
                         <label className="block text-sm">
-                          <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
-                            Statut de conformité
+                          <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                            Action de mise en conformité *
                           </span>
-                          <select
-                            value={statut}
-                            onChange={(e) => setStatut(e.target.value as ConformiteStatut)}
-                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-semibold text-brand-blue"
-                          >
-                            {STATUTS_CONFORMITE.map((s) => (
-                              <option key={s.code} value={s.code}>
-                                {s.label}
-                              </option>
-                            ))}
-                          </select>
+                          <textarea
+                            value={libelleAction}
+                            onChange={(e) => setLibelleAction(e.target.value)}
+                            rows={2}
+                            className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
+                            placeholder="Ex. Mettre à jour le règlement intérieur et former les managers"
+                          />
                         </label>
-                      </div>
-                      <label className="block text-sm">
-                        <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
-                          Preuve de conformité différée (BU)
-                        </span>
-                        <textarea
-                          value={preuveDifferee}
-                          onChange={(e) => setPreuveDifferee(e.target.value)}
-                          rows={2}
-                          className="w-full resize-y rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
-                          placeholder="Ex. Attestation à transmettre après l'audit de juin"
-                        />
-                      </label>
+                        <div className="grid gap-3 sm:grid-cols-3">
+                          <label className="block text-sm">
+                            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Responsable (email d&apos;un User existant)
+                            </span>
+                            <input
+                              type="text"
+                              value={responsable}
+                              onChange={(e) => setResponsable(e.target.value)}
+                              placeholder="prenom.nom@agl-ci.com"
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                              Délai
+                            </span>
+                            <input
+                              type="date"
+                              value={delai}
+                              onChange={(e) => setDelai(e.target.value)}
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800"
+                            />
+                          </label>
+                          <label className="block text-sm">
+                            <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                              Niveau de conformité — {taux} %
+                            </span>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={taux}
+                              onChange={(e) => setTaux(Number(e.target.value))}
+                              className="w-full accent-[#1C3359]"
+                            />
+                          </label>
+                        </div>
+                      </fieldset>
                       <div className="flex flex-wrap gap-2">
                         <button
                           type="button"
@@ -406,7 +529,7 @@ export default function ApprobationsPage() {
                           disabled={traitement}
                           className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 disabled:opacity-50"
                         >
-                          {traitement ? "Enregistrement…" : "Approuver & Initialiser la Conformité"}
+                          {traitement ? "Enregistrement…" : "Approuver & Enregistrer la Conformité"}
                         </button>
                         <button
                           type="button"
@@ -442,6 +565,28 @@ export default function ApprobationsPage() {
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+/** Champ en lecture seule : valeur déjà remplie à l'assignation. */
+function Lecture({
+  label,
+  valeur,
+  mono = false,
+}: {
+  label: string;
+  valeur: string;
+  mono?: boolean;
+}) {
+  return (
+    <div className="rounded-md bg-slate-50 px-2 py-1.5 text-sm">
+      <p className="text-[10px] font-semibold uppercase tracking-wide text-slate-400">
+        {label}
+      </p>
+      <p className={`mt-0.5 text-slate-800 ${mono ? "font-mono text-xs" : ""}`}>
+        {valeur}
+      </p>
     </div>
   );
 }
