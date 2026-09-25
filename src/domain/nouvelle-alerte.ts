@@ -42,6 +42,8 @@ export interface AlerteAnalyse21 {
   moyenCommunication: string;
   /** 12 — Applicable à AGL CI */
   applicableAGLCI: boolean;
+  /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable (DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS). */
+  propositionBU: DepartementCode | "";
   // ——— VeilleFiche : 5 champs ———
   /** 13 — Département d'acteurs responsable (assignation) */
   departementResponsable: DepartementCode;
@@ -90,6 +92,7 @@ export function creerAlerteVierge(): AlerteAnalyse21 {
     contenu: "",
     moyenCommunication: "",
     applicableAGLCI: true,
+    propositionBU: "",
     departementResponsable: "DJ",
     actionsExistantes: "",
     preuvesExistantes: "",

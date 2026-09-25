@@ -3,8 +3,11 @@
  *
  * Recréation cible dans Dataverse / Power Pages :
  * - 4 tables : User, VeilleAlerte, VeilleFiche, VeilleAction
- * - 2 jeux d'options (OptionSets) : DepartementCode, ConformiteStatut
+ * - 3 jeux d'options (OptionSets) : DepartementCode, ConformiteStatut, FluxStatut
  * - Relations : voir `relations` ci-dessous (lookup + cascade).
+ * - Workflow double validation : `VeilleAlerte.propositionBU` (recommandation IA)
+ *   → `VeilleFiche.fluxStatut` (ATTENTE_VALIDATION_JURIDIQUE → ATTENTE_APPROBATION_METIER
+ *   → APPROUVE_METIER | REJETE_METIER).
  */
 
 export interface DataverseField {
@@ -49,6 +52,12 @@ export const DATAVERSE_OPTION_SETS = {
     "PARTIELLEMENT_75",
     "CONFORME_100",
   ],
+  FluxStatut: [
+    "ATTENTE_VALIDATION_JURIDIQUE",
+    "ATTENTE_APPROBATION_METIER",
+    "APPROUVE_METIER",
+    "REJETE_METIER",
+  ],
 } as const;
 
 export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
@@ -78,6 +87,7 @@ export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
       { logicalName: "contenu", displayName: "Contenu brut (PDF/image)", dataType: "MultipleLinesOfText" },
       { logicalName: "moyencommunication", displayName: "Moyen de communication", dataType: "SingleLineOfText" },
       { logicalName: "applicableaglci", displayName: "Applicable à AGL CI", dataType: "TwoOptions" },
+      { logicalName: "propositionbu", displayName: "BU recommandée par l'IA (Gemini 3.6 Flash)", dataType: "OptionSet" },
     ],
   },
   VeilleFiche: {
@@ -90,6 +100,7 @@ export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
       { logicalName: "preuvesexistantes", displayName: "Preuves de conformité existantes", dataType: "MultipleLinesOfText" },
       { logicalName: "statutconformite", displayName: "Statut de conformité", dataType: "OptionSet" },
       { logicalName: "preuvedifferee", displayName: "Preuve de conformité différée", dataType: "MultipleLinesOfText" },
+      { logicalName: "fluxstatut", displayName: "Statut du workflow (double validation)", dataType: "OptionSet" },
     ],
   },
   VeilleAction: {

@@ -40,6 +40,7 @@ interface ApiGetData {
     contenu: string;
     moyenCommunication: string | null;
     applicableA_AGL_CI: boolean;
+    propositionBU?: DepartementCode | null;
   };
   fiche: {
     departement: DepartementCode;
@@ -126,6 +127,7 @@ export default function ModifierAlertePage() {
           contenu: alerte.contenu,
           moyenCommunication: alerte.moyenCommunication ?? "",
           applicableAGLCI: alerte.applicableA_AGL_CI,
+          propositionBU: alerte.propositionBU ?? "",
           departementResponsable: fiche.departement,
           actionsExistantes: fiche.actionsExistantes ?? "",
           preuvesExistantes: fiche.preuvesExistantes ?? "",

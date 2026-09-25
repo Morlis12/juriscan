@@ -3,8 +3,8 @@
  *
  * Ces types sont la référence métier portable vers Microsoft Dataverse :
  * - `User` → table Dataverse `User` (acteurs par département / onglet)
- * - `VeilleAlerte` → table maîtresse `VeilleAlerte` (alerte de veille)
- * - `VeilleFiche` → table `VeilleFiche` (déclinaison par direction)
+ * - `VeilleAlerte` → table maîtresse `VeilleAlerte` (alerte de veille + `propositionBU` IA)
+ * - `VeilleFiche` → table `VeilleFiche` (déclinaison par direction + `fluxStatut` workflow)
  * - `VeilleAction` → table `VeilleAction` (plan d'actions d'amélioration)
  *
  * Conventions Dataverse-ready : noms de tables/champs en anglais,
@@ -58,6 +58,49 @@ export const CONFORMITE_STATUTS = Object.keys(
   CONFORMITE_POURCENTAGE,
 ) as ConformiteStatut[];
 
+/**
+ * Workflow à double validation JuriScan (IA + Juridique) × JuriDesk (BU).
+ * Portable Dataverse : OptionSet `FluxStatut` sur la table `VeilleFiche`.
+ * - ATTENTE_VALIDATION_JURIDIQUE : l'IA a fait l'OCR et proposé la BU, le juridique doit valider.
+ * - ATTENTE_APPROBATION_METIER : le juridique a validé, la BU doit approuver ou rejeter.
+ * - APPROUVE_METIER : la BU a validé et pilote sa conformité (actions, délais, taux 0-100 %).
+ * - REJETE_METIER : la BU a refusé, retour au juridique.
+ */
+export type FluxStatut =
+  | "ATTENTE_VALIDATION_JURIDIQUE"
+  | "ATTENTE_APPROBATION_METIER"
+  | "APPROUVE_METIER"
+  | "REJETE_METIER";
+
+export const FLUX_STATUTS: FluxStatut[] = [
+  "ATTENTE_VALIDATION_JURIDIQUE",
+  "ATTENTE_APPROBATION_METIER",
+  "APPROUVE_METIER",
+  "REJETE_METIER",
+];
+
+export const FLUX_STATUT_LABELS: Record<FluxStatut, string> = {
+  ATTENTE_VALIDATION_JURIDIQUE: "Attente validation juridique",
+  ATTENTE_APPROBATION_METIER: "Attente approbation métier",
+  APPROUVE_METIER: "Approuvé métier",
+  REJETE_METIER: "Rejeté métier",
+};
+
+/**
+ * BU éligibles à la recommandation IA (`propositionBU`) et à l'approbation métier.
+ * CENTRAL_VRG et DIR_COMM_MARK exclus du routage IA (périmètres transverse / non ciblés).
+ */
+export const BU_PROPOSITIONNABLES = [
+  "DJ",
+  "DRH",
+  "DAF",
+  "DQHSE",
+  "PATR_IMMO",
+  "DILS",
+] as const satisfies readonly DepartementCode[];
+
+export type PropositionBU = (typeof BU_PROPOSITIONNABLES)[number];
+
 /** Acteur interne assignable aux actions (table `User`). */
 export interface DomainUser {
   id: string;
@@ -86,6 +129,8 @@ export interface DomainVeilleAlerte {
   contenu: string;
   moyenCommunication: string | null;
   applicableA_AGL_CI: boolean;
+  /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable. */
+  propositionBU: DepartementCode | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 }
@@ -102,6 +147,8 @@ export interface DomainVeilleFiche {
   preuvesExistantes: string | null;
   statutConformite: ConformiteStatut;
   preuveDifferee: string | null;
+  /** Position dans le workflow à double validation JuriScan × JuriDesk. */
+  fluxStatut: FluxStatut;
   createdAt: Date | string;
   updatedAt: Date | string;
 }

@@ -14,8 +14,10 @@ import { parseFicheRouteId, type FicheVeillePayload } from "@/lib/veille-save";
 import {
   CONFORMITE_STATUTS,
   DEPARTEMENT_CODES,
+  FLUX_STATUTS,
   type ConformiteStatut,
   type DepartementCode,
+  type FluxStatut,
 } from "@/domain/veille";
 
 function dateOuNull(v: unknown): Date | null {
@@ -175,6 +177,113 @@ export async function PUT(
     return NextResponse.json({ success: true, responsableNonLie });
   } catch (error) {
     console.error("Erreur serveur API Veille (PUT [id]) :", error);
+    const message = error instanceof Error ? error.message : "Erreur interne";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/**
+ * PATCH /api/veille/[id] — transitions du workflow à double validation.
+ *
+ * - Juridique : { fluxStatut: "ATTENTE_APPROBATION_METIER" } (valide vers la BU).
+ * - BU : { fluxStatut: "REJETE_METIER" } (renvoie au juridique).
+ * - BU : { fluxStatut: "APPROUVE_METIER", libelleAction, delai, tauxAvancement (0-100),
+ *         statutConformite } (approuve et initialise la conformité — seuls champs que la BU peut remplir).
+ */
+export async function PATCH(
+  req: Request,
+  { params }: { params: Promise<{ id: string }> },
+) {
+  const { id } = await params;
+  const cible = parseFicheRouteId(id);
+  if (!cible) {
+    return NextResponse.json(
+      { error: "Fiche de démonstration : transition simulée côté client." },
+      { status: 404 },
+    );
+  }
+  try {
+    const b = (await req.json()) as {
+      fluxStatut?: unknown;
+      libelleAction?: unknown;
+      delai?: unknown;
+      tauxAvancement?: unknown;
+      statutConformite?: unknown;
+      actionId?: unknown;
+    };
+    const fluxRaw =
+      typeof b.fluxStatut === "string" ? b.fluxStatut.trim().toUpperCase() : "";
+    if (!(FLUX_STATUTS as string[]).includes(fluxRaw)) {
+      return NextResponse.json(
+        {
+          error:
+            "fluxStatut invalide (attendu : ATTENTE_VALIDATION_JURIDIQUE, ATTENTE_APPROBATION_METIER, APPROUVE_METIER, REJETE_METIER).",
+        },
+        { status: 400 },
+      );
+    }
+    const fluxStatut = fluxRaw as FluxStatut;
+
+    const statutRaw =
+      typeof b.statutConformite === "string" ? b.statutConformite.trim() : "";
+    const statutConformite =
+      statutRaw && (CONFORMITE_STATUTS as string[]).includes(statutRaw)
+        ? (statutRaw as ConformiteStatut)
+        : null;
+    if (statutRaw && !statutConformite) {
+      return NextResponse.json(
+        { error: "Statut de conformité invalide." },
+        { status: 400 },
+      );
+    }
+
+    const libelleAction =
+      typeof b.libelleAction === "string" ? b.libelleAction.trim() : "";
+    const taux =
+      b.tauxAvancement === undefined || b.tauxAvancement === null || b.tauxAvancement === ""
+        ? null
+        : Math.min(100, Math.max(0, Number(b.tauxAvancement) || 0));
+    const delaiRaw = typeof b.delai === "string" ? b.delai.trim() : "";
+    const delai = delaiRaw ? dateOuNull(delaiRaw) : null;
+    const actionId =
+      typeof b.actionId === "string" && b.actionId ? b.actionId : null;
+
+    await prisma.$transaction(async (tx) => {
+      await tx.veilleFiche.update({
+        where: { id: cible.ficheId },
+        data: {
+          fluxStatut,
+          ...(statutConformite ? { statutConformite } : {}),
+        },
+      });
+      // La BU pilote sa conformité : action + délai + taux 0-100 % (+ statut).
+      if (fluxStatut === "APPROUVE_METIER" && (libelleAction || actionId)) {
+        const donneesAction = {
+          ...(libelleAction ? { libelleAction } : {}),
+          ...(delai !== undefined ? { delai } : {}),
+          ...(taux !== null ? { tauxAvancement: taux } : {}),
+        };
+        if (actionId) {
+          await tx.veilleAction.update({
+            where: { id: actionId },
+            data: donneesAction,
+          });
+        } else if (libelleAction) {
+          await tx.veilleAction.create({
+            data: {
+              ficheId: cible.ficheId,
+              libelleAction,
+              delai,
+              tauxAvancement: taux ?? 0,
+            },
+          });
+        }
+      }
+    });
+
+    return NextResponse.json({ success: true, fluxStatut });
+  } catch (error) {
+    console.error("Erreur serveur API Veille (PATCH [id]) :", error);
     const message = error instanceof Error ? error.message : "Erreur interne";
     return NextResponse.json({ error: message }, { status: 500 });
   }

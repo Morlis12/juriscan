@@ -22,9 +22,12 @@ interface ApiAnalyseData {
   resumeTexte?: string;
   libelleApplicable?: string;
   moyenCommunication?: string;
+  dateEntreeVigueur?: string;
   statutConformite?: string;
   actionsAmelioration?: string;
   departement?: string;
+  /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable. */
+  propositionBU?: string;
 }
 
 function texteOu(v: unknown, repli: string): string {
@@ -140,10 +143,20 @@ export default function NouvelleAlertePage() {
       }
       const data = payload.data;
       // Zéro mock : champs IA réels + base vierge = 21 colonnes à compléter.
+      // La recommandation BU (`propositionBU`, miroir `departement`) pré-remplit
+      // le département responsable — le juridique reste décideur (workflow).
       const socle = creerAlerteVierge();
-      const departement = (DEPARTEMENT_CODES as string[]).includes(data.departement ?? "")
-        ? (data.departement as DepartementCode)
-        : socle.departementResponsable;
+      const buRecommandee = [data.propositionBU, data.departement].find((v) =>
+        (DEPARTEMENT_CODES as string[]).includes(v ?? ""),
+      );
+      const departement = (
+        buRecommandee ?? socle.departementResponsable
+      ) as DepartementCode;
+      const propositionBU = (
+        (DEPARTEMENT_CODES as string[]).includes(data.propositionBU ?? "")
+          ? data.propositionBU
+          : ""
+      ) as AlerteAnalyse21["propositionBU"];
       const statut = (CONFORMITE_STATUTS as string[]).includes(data.statutConformite ?? "")
         ? (data.statutConformite as ConformiteStatut)
         : socle.statutConformite;
@@ -157,6 +170,8 @@ export default function NouvelleAlertePage() {
         resumeTexte: texteOu(data.resumeTexte, socle.resumeTexte),
         libelleApplicable: texteOu(data.libelleApplicable, socle.libelleApplicable),
         moyenCommunication: texteOu(data.moyenCommunication, socle.moyenCommunication),
+        dateEntreeVigueur: texteOu(data.dateEntreeVigueur, socle.dateEntreeVigueur),
+        propositionBU,
         departementResponsable: departement,
         statutConformite: statut,
         libelleAction: texteOu(data.actionsAmelioration, socle.libelleAction),
@@ -164,15 +179,16 @@ export default function NouvelleAlertePage() {
       setResultat(analyse);
       setTexteExtrait(
         [
-          `—— Analyse JuriScan : ${file.name} ——`,
+          `—— Analyse JuriScan (Gemini 3.6 Flash) : ${file.name} ——`,
           "",
           `Référence : ${analyse.referenceTexte}`,
           `Résumé : ${analyse.resumeTexte}`,
           "",
           `Libellé applicable : ${analyse.libelleApplicable}`,
+          ...(analyse.propositionBU ? [`BU recommandée par l'IA : ${analyse.propositionBU}`] : []),
         ].join("\n"),
       );
-      setSource(payload.source ?? "simulation");
+      setSource(payload.source ?? "gemini");
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
     } finally {
@@ -462,6 +478,14 @@ export default function NouvelleAlertePage() {
               </Bloc>
 
               <Bloc titre="Fiche — assignation département (5 champs)">
+                {resultat.propositionBU && (
+                  <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue sm:col-span-2">
+                    🤖 Gemini 3.6 Flash recommande la BU :{" "}
+                    <span className="font-bold">{resultat.propositionBU}</span>
+                    {" — "}le juridique valide l'assignation ci-dessous
+                    (workflow : attente validation juridique → attente approbation métier).
+                  </p>
+                )}
                 <label className="block rounded-lg border-2 border-brand-gold/60 bg-brand-gold/10 px-3 py-2 text-sm">
                   <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
                     13 · Département d&apos;acteurs responsable *

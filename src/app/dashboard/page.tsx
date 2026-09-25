@@ -2,8 +2,12 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
-import { CONFORMITE_POURCENTAGE, DEPARTEMENTS } from "@/domain/veille";
+import type { ConformiteStatut, DepartementCode, FluxStatut } from "@/domain/veille";
+import {
+  CONFORMITE_POURCENTAGE,
+  DEPARTEMENTS,
+  FLUX_STATUT_LABELS,
+} from "@/domain/veille";
 import {
   MOCK_ACTIONS,
   MOCK_ALERTES,
@@ -18,6 +22,7 @@ interface ApiFiche {
   id: string;
   departement: DepartementCode;
   statutConformite: ConformiteStatut;
+  fluxStatut?: FluxStatut;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
@@ -32,9 +37,16 @@ interface ApiAlerte {
   referenceTexte: string;
   resumeTexte: string;
   dateEntreeVigueur: string | null;
+  propositionBU?: DepartementCode | null;
   createdAt: string;
   fichesDepartements: ApiFiche[];
 }
+
+/** Alerte affichée : mock ou DB, enrichie du workflow double validation. */
+type AlertePilotee = MockAlerte & {
+  fluxStatut: FluxStatut;
+  propositionBU?: string | null;
+};
 
 type TabCode = "ALL" | DepartementCode;
 
@@ -69,6 +81,24 @@ const STATUT_LABEL: Record<MockAlerte["statut"], string> = {
   PARTIELLEMENT_75: "Partiellement Conforme",
 };
 
+const FLUX_BADGE: Record<FluxStatut, string> = {
+  ATTENTE_VALIDATION_JURIDIQUE:
+    "bg-sky-100 text-sky-800 ring-1 ring-inset ring-sky-600/20",
+  ATTENTE_APPROBATION_METIER:
+    "bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-600/20",
+  APPROUVE_METIER:
+    "bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-600/20",
+  REJETE_METIER: "bg-red-100 text-red-800 ring-1 ring-inset ring-red-600/20",
+};
+
+/** Démonstration : répartit les mocks sur le cycle de vie pour piloter le flux sans DB. */
+const FLUX_DEMO: FluxStatut[] = [
+  "ATTENTE_VALIDATION_JURIDIQUE",
+  "ATTENTE_APPROBATION_METIER",
+  "APPROUVE_METIER",
+  "REJETE_METIER",
+];
+
 function formatDateFR(iso: string): string {
   return new Date(`${iso}T00:00:00`).toLocaleDateString("fr-FR", {
     day: "2-digit",
@@ -80,9 +110,13 @@ function formatDateFR(iso: string): string {
 export default function DashboardPage() {
   const [tab, setTab] = useState<TabCode>("ALL");
   const [now, setNow] = useState<Date | null>(null);
-  const [dbAlertes, setDbAlertes] = useState<MockAlerte[]>([]);
+  const [dbAlertes, setDbAlertes] = useState<AlertePilotee[]>([]);
   const [dbActions, setDbActions] = useState<MockAction[]>([]);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  // Filtres multicritères du pilotage juridique (synchronisés avec les onglets BU).
+  const [filtreBU, setFiltreBU] = useState<TabCode>("ALL");
+  const [filtreDate, setFiltreDate] = useState("");
+  const [filtreType, setFiltreType] = useState("ALL");
 
   // Message de succès après enregistrement / modification d'une fiche.
   useEffect(() => {
@@ -110,7 +144,7 @@ export default function DashboardPage() {
       .then((r) => (r.ok ? r.json() : null))
       .then((payload: { success?: boolean; data?: ApiAlerte[] } | null) => {
         if (!actif || !payload?.success || !Array.isArray(payload.data)) return;
-        const alertes: MockAlerte[] = [];
+        const alertes: AlertePilotee[] = [];
         const actions: MockAction[] = [];
         for (const a of payload.data) {
           for (const f of a.fichesDepartements) {
@@ -127,6 +161,8 @@ export default function DashboardPage() {
               tauxAvancement: action
                 ? Math.round(action.tauxAvancement)
                 : CONFORMITE_POURCENTAGE[f.statutConformite],
+              fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
+              propositionBU: a.propositionBU ?? null,
             });
             if (action) {
               actions.push({
@@ -165,16 +201,57 @@ export default function DashboardPage() {
       }).format(now)
     : "--:--:--";
 
-  const toutesAlertes = useMemo(() => [...dbAlertes, ...MOCK_ALERTES], [dbAlertes]);
+  const toutesAlertes: AlertePilotee[] = useMemo(
+    () => [
+      ...dbAlertes,
+      ...MOCK_ALERTES.map((m, i) => ({
+        ...m,
+        fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
+        propositionBU: m.departement,
+      })),
+    ],
+    [dbAlertes],
+  );
   const toutesActions = useMemo(() => [...dbActions, ...MOCK_ACTIONS], [dbActions]);
 
-  const alertes = useMemo(
-    () =>
-      tab === "ALL"
-        ? toutesAlertes
-        : toutesAlertes.filter((a) => a.departement === tab),
-    [tab, toutesAlertes],
+  // Types de texte disponibles pour le filtre (Décret, Loi, Arrêté…).
+  const typesDisponibles = useMemo(
+    () => Array.from(new Set(toutesAlertes.map((a) => a.natureTexte))).sort(),
+    [toutesAlertes],
   );
+
+  function choisirBU(code: TabCode) {
+    setTab(code);
+    setFiltreBU(code);
+  }
+
+  const alertes = useMemo(() => {
+    const bu = filtreBU !== "ALL" ? filtreBU : tab;
+    return toutesAlertes.filter((a) => {
+      if (bu !== "ALL" && a.departement !== bu) return false;
+      if (filtreType !== "ALL" && a.natureTexte !== filtreType) return false;
+      if (filtreDate && a.dateEntreeVigueur !== filtreDate) return false;
+      return true;
+    });
+  }, [toutesAlertes, tab, filtreBU, filtreType, filtreDate]);
+
+  /** Le juridique valide la fiche IA → bascule vers l'approbation métier. */
+  async function validerVersMetier(id: string) {
+    setDbAlertes((prev) =>
+      prev.map((a) =>
+        a.id === id ? { ...a, fluxStatut: "ATTENTE_APPROBATION_METIER" } : a,
+      ),
+    );
+    try {
+      await fetch(`/api/veille/${encodeURIComponent(id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fluxStatut: "ATTENTE_APPROBATION_METIER" }),
+      });
+    } catch {
+      /* démo locale : la transition optimiste suffit */
+    }
+  }
 
   const numeros = useMemo(() => new Set(alertes.map((a) => a.numeroOrdre)), [alertes]);
   const actionsPerimetre = useMemo(
@@ -205,9 +282,18 @@ export default function DashboardPage() {
   const perimetreLabel =
     tab === "ALL" ? "Toutes directions" : DEPARTEMENTS[tab as DepartementCode];
 
+  const filtresActifs = filtreBU !== "ALL" || filtreType !== "ALL" || filtreDate !== "";
+
+  function reinitialiserFiltres() {
+    setFiltreBU("ALL");
+    setTab("ALL");
+    setFiltreType("ALL");
+    setFiltreDate("");
+  }
+
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* EN-TÊTE FIXE */}
+      {/* EN-TÊTE FIXE AGL — pilotage unique du juridique */}
       <header className="sticky top-0 z-50 backdrop-blur-md bg-brand-blue/95 text-white shadow-md">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
@@ -216,15 +302,21 @@ export default function DashboardPage() {
             </div>
             <div>
               <p className="text-lg font-bold leading-tight">
-                AGL - JuriScan AI
+                AGL - JuriScan AI · Pilotage Juridique
               </p>
               <p className="text-xs capitalize text-slate-300">{dateStr}</p>
             </div>
           </div>
-          <div className="flex items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-2 text-sm">
             <span className="font-mono tabular-nums text-slate-100">
               {timeStr}
             </span>
+            <Link
+              href="/dashboard/approbations"
+              className="rounded-full bg-brand-gold px-4 py-1.5 text-xs font-bold text-brand-blue shadow transition-colors hover:brightness-95"
+            >
+              Approbations métier →
+            </Link>
             <span className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium">
               <span className="relative flex h-2.5 w-2.5">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
@@ -241,7 +333,7 @@ export default function DashboardPage() {
               <button
                 key={t.code}
                 type="button"
-                onClick={() => setTab(t.code)}
+                onClick={() => choisirBU(t.code)}
                 className={`whitespace-nowrap rounded-full px-4 py-1.5 text-sm font-medium transition-colors ${
                   tab === t.code
                     ? "bg-brand-gold text-brand-blue shadow"
@@ -256,18 +348,99 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+        {/* FILTRES MULTICRITÈRES — pilotage juridique */}
+        <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <h2 className="text-sm font-bold uppercase tracking-wide text-brand-blue">
+              Filtres du pilotage juridique
+            </h2>
+            {filtresActifs && (
+              <button
+                type="button"
+                onClick={reinitialiserFiltres}
+                className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-600 hover:border-brand-blue hover:text-brand-blue"
+              >
+                Réinitialiser les filtres ✕
+              </button>
+            )}
+          </div>
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Filtrer par BU
+              </span>
+              <select
+                value={filtreBU}
+                onChange={(e) => choisirBU(e.target.value as TabCode)}
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue"
+              >
+                <option value="ALL">Toutes les BU</option>
+                {TABS.filter((t) => t.code !== "ALL").map((t) => (
+                  <option key={t.code} value={t.code}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Filtrer par date d&apos;entrée en vigueur
+              </span>
+              <input
+                type="date"
+                value={filtreDate}
+                onChange={(e) => setFiltreDate(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800"
+              />
+            </label>
+            <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                Filtrer par type de texte
+              </span>
+              <select
+                value={filtreType}
+                onChange={(e) => setFiltreType(e.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-slate-800"
+              >
+                <option value="ALL">Tous les types</option>
+                {typesDisponibles.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          {filtresActifs && (
+            <p className="mt-2 text-xs text-slate-500">
+              {alertes.length} résultat{alertes.length > 1 ? "s" : ""} après filtres
+              {filtreBU !== "ALL" ? ` · BU : ${filtreBU}` : ""}
+              {filtreType !== "ALL" ? ` · Type : ${filtreType}` : ""}
+              {filtreDate ? ` · Date : ${filtreDate}` : ""}.
+            </p>
+          )}
+        </section>
+
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-500">
             Périmètre : <span className="font-semibold text-brand-blue">{perimetreLabel}</span>
             {" — "}
             {alertes.length} alerte{alertes.length > 1 ? "s" : ""}
           </p>
-          <Link
-            href="/dashboard/nouvelle-alerte"
-            className="rounded-lg border border-brand-gold bg-brand-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-blue/90"
-          >
-            ➕ Nouvelle Alerte
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/dashboard/approbations"
+              className="rounded-lg border border-brand-blue px-4 py-2 text-sm font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
+            >
+              Approbations métier
+            </Link>
+            <Link
+              href="/dashboard/nouvelle-alerte"
+              className="rounded-lg border border-brand-gold bg-brand-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-blue/90"
+            >
+              ➕ Nouvelle Alerte
+            </Link>
+          </div>
         </div>
 
         {confirmation && (
@@ -351,10 +524,10 @@ export default function DashboardPage() {
         {/* TABLEAU DE SUIVI */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <h2 className="bg-brand-blue px-5 py-3 text-base font-bold text-white">
-            Suivi des textes — {perimetreLabel}
+            Suivi des textes — {perimetreLabel} · Workflow double validation
           </h2>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[880px] text-left text-sm">
+            <table className="w-full min-w-[1020px] text-left text-sm">
               <thead>
                 <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3">N° Ordre</th>
@@ -363,6 +536,8 @@ export default function DashboardPage() {
                   <th className="px-4 py-3">Date d&apos;entrée en vigueur</th>
                   <th className="px-4 py-3">Taux d&apos;avancement</th>
                   <th className="px-4 py-3">Statut</th>
+                  <th className="px-4 py-3">Flux JuriScan × JuriDesk</th>
+                  <th className="px-4 py-3">Action juridique</th>
                 </tr>
               </thead>
               <tbody>
@@ -414,15 +589,35 @@ export default function DashboardPage() {
                         {STATUT_LABEL[a.statut]}
                       </span>
                     </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${FLUX_BADGE[a.fluxStatut]}`}
+                      >
+                        {FLUX_STATUT_LABELS[a.fluxStatut]}
+                      </span>
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-3">
+                      {a.fluxStatut === "ATTENTE_VALIDATION_JURIDIQUE" ? (
+                        <button
+                          type="button"
+                          onClick={() => validerVersMetier(a.id)}
+                          className="rounded-lg bg-brand-gold px-3 py-1.5 text-xs font-bold text-brand-blue shadow-sm transition-colors hover:brightness-95"
+                        >
+                          Valider vers métier →
+                        </button>
+                      ) : (
+                        <span className="text-xs text-slate-400">—</span>
+                      )}
+                    </td>
                   </tr>
                 ))}
                 {alertes.length === 0 && (
                   <tr>
                     <td
-                      colSpan={6}
+                      colSpan={8}
                       className="px-4 py-8 text-center text-sm text-slate-400"
                     >
-                      Aucune alerte sur ce périmètre.
+                      Aucune alerte sur ce périmètre. Ajustez les filtres BU / Date / Type.
                     </td>
                   </tr>
                 )}

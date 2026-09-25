@@ -10,10 +10,13 @@
 import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/prisma";
 import {
+  BU_PROPOSITIONNABLES,
   CONFORMITE_STATUTS,
   DEPARTEMENT_CODES,
+  FLUX_STATUTS,
   type ConformiteStatut,
   type DepartementCode,
+  type FluxStatut,
 } from "@/domain/veille";
 
 export interface FicheVeillePayload {
@@ -29,11 +32,16 @@ export interface FicheVeillePayload {
   contenu?: unknown;
   moyenCommunication?: unknown;
   applicableAGLCI?: unknown;
+  /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable. */
+  propositionBU?: unknown;
   departementResponsable?: unknown;
   actionsExistantes?: unknown;
   preuvesExistantes?: unknown;
   statutConformite?: unknown;
   preuveDifferee?: unknown;
+  /** Position workflow ; défaut ATTENTE_VALIDATION_JURIDIQUE (création IA), */
+  /** le juridique fait basculer vers ATTENTE_APPROBATION_METIER en validant. */
+  fluxStatut?: unknown;
   libelleAction?: unknown;
   delai?: unknown;
   tauxAvancement?: unknown;
@@ -76,6 +84,8 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
   const libelleApplicable = chaine(b.libelleApplicable).trim();
   const departement = chaine(b.departementResponsable);
   const statut = chaine(b.statutConformite);
+  const propositionRaw = chaine(b.propositionBU).trim().toUpperCase();
+  const fluxRaw = chaine(b.fluxStatut).trim().toUpperCase();
 
   if (!numeroOrdre || !natureTexte || !referenceTexte || !resumeTexte || !libelleApplicable) {
     const err = new Error(
@@ -94,6 +104,23 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
     (err as NodeJS.ErrnoException).code = "VALIDATION_400";
     throw err;
   }
+  // propositionBU optionnelle : si fournie, doit être une BU propositionnable.
+  const propositionBU =
+    propositionRaw && (BU_PROPOSITIONNABLES as readonly string[]).includes(propositionRaw)
+      ? (propositionRaw as DepartementCode)
+      : null;
+  if (propositionRaw && !propositionBU) {
+    const err = new Error(
+      "propositionBU invalide (attendu : DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS).",
+    );
+    (err as NodeJS.ErrnoException).code = "VALIDATION_400";
+    throw err;
+  }
+  // fluxStatut optionnel : défaut ATTENTE_VALIDATION_JURIDIQUE (sortie d'OCR IA).
+  const fluxStatut: FluxStatut =
+    fluxRaw && (FLUX_STATUTS as string[]).includes(fluxRaw)
+      ? (fluxRaw as FluxStatut)
+      : "ATTENTE_VALIDATION_JURIDIQUE";
 
   const taux = Math.min(100, Math.max(0, Number(b.tauxAvancement) || 0));
   const libelleAction = chaine(b.libelleAction).trim();
@@ -113,6 +140,7 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
         contenu: chaine(b.contenu).trim() || resumeTexte,
         moyenCommunication: chaine(b.moyenCommunication).trim() || null,
         applicableA_AGL_CI: b.applicableAGLCI !== false,
+        propositionBU,
         fichesDepartements: {
           create: {
             departement: departement as DepartementCode,
@@ -120,6 +148,7 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
             preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
             statutConformite: statut as ConformiteStatut,
             preuveDifferee: chaine(b.preuveDifferee).trim() || null,
+            fluxStatut,
             ...(libelleAction
               ? {
                   actionsAmelioration: {
