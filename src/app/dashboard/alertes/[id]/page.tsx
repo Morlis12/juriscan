@@ -129,6 +129,7 @@ export default function ModifierAlertePage() {
           applicableAGLCI: alerte.applicableA_AGL_CI,
           propositionBU: alerte.propositionBU ?? "",
           departementResponsable: fiche.departement,
+          departementsResponsables: [fiche.departement],
           actionsExistantes: fiche.actionsExistantes ?? "",
           preuvesExistantes: fiche.preuvesExistantes ?? "",
           statutConformite: fiche.statutConformite,

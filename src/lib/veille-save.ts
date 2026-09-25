@@ -3,8 +3,9 @@
  *
  * Utilisé par POST /api/veille et POST /api/sauvegarde : insère les 21
  * colonnes validées du formulaire → `VeilleAlerte.create` (12 champs) +
- * `VeilleFiche.create` (département assigné) + `VeilleAction.create`
- * optionnelle. Anti-doublon `numeroOrdre` avec suffixe unique (un essai).
+ * N `VeilleFiche.create` (une fiche par BU cochée — un texte de loi peut
+ * concerner plusieurs BU) + `VeilleAction.create` optionnelle par fiche.
+ * Anti-doublon `numeroOrdre` avec suffixe unique (un essai).
  */
 
 import { Prisma } from "@prisma/client";
@@ -34,6 +35,8 @@ export interface FicheVeillePayload {
   applicableAGLCI?: unknown;
   /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable. */
   propositionBU?: unknown;
+  /** Assignation multi-BU : un texte peut concerner plusieurs BU (cases à cocher). */
+  departementsResponsables?: unknown;
   departementResponsable?: unknown;
   actionsExistantes?: unknown;
   preuvesExistantes?: unknown;
@@ -87,6 +90,17 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
   const propositionRaw = chaine(b.propositionBU).trim().toUpperCase();
   const fluxRaw = chaine(b.fluxStatut).trim().toUpperCase();
 
+  // Un texte de loi peut concerner plusieurs BU : le formulaire envoie la
+  // liste cochée (`departementsResponsables`), avec repli sur le champ
+  // historique mono-BU (`departementResponsable`).
+  const brutBus = Array.isArray(b.departementsResponsables)
+    ? b.departementsResponsables
+    : [];
+  const listeBus = (
+    brutBus.length > 0 ? brutBus.map((v) => chaine(v).trim()) : [departement]
+  ).filter((v) => v !== "");
+  const departements = Array.from(new Set(listeBus)) as string[];
+
   if (!numeroOrdre || !natureTexte || !referenceTexte || !resumeTexte || !libelleApplicable) {
     const err = new Error(
       "Champs requis manquants (N° ordre, nature, référence, résumé, libellé).",
@@ -94,10 +108,17 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
     (err as NodeJS.ErrnoException).code = "VALIDATION_400";
     throw err;
   }
-  if (!(DEPARTEMENT_CODES as string[]).includes(departement)) {
-    const err = new Error("Département responsable invalide.");
+  if (departements.length === 0) {
+    const err = new Error("Cochez au moins une BU responsable.");
     (err as NodeJS.ErrnoException).code = "VALIDATION_400";
     throw err;
+  }
+  for (const code of departements) {
+    if (!(DEPARTEMENT_CODES as string[]).includes(code)) {
+      const err = new Error(`Département responsable invalide : ${code}.`);
+      (err as NodeJS.ErrnoException).code = "VALIDATION_400";
+      throw err;
+    }
   }
   if (!(CONFORMITE_STATUTS as string[]).includes(statut)) {
     const err = new Error("Statut de conformité invalide.");
@@ -142,8 +163,8 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
         applicableA_AGL_CI: b.applicableAGLCI !== false,
         propositionBU,
         fichesDepartements: {
-          create: {
-            departement: departement as DepartementCode,
+          create: departements.map((code) => ({
+            departement: code as DepartementCode,
             actionsExistantes: chaine(b.actionsExistantes).trim() || null,
             preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
             statutConformite: statut as ConformiteStatut,
@@ -160,7 +181,7 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
                   },
                 }
               : {}),
-          },
+          })),
         },
       },
       include: { fichesDepartements: { include: { actionsAmelioration: true } } },

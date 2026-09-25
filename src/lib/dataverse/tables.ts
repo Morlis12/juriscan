@@ -8,6 +8,9 @@
  * - Workflow double validation : `VeilleAlerte.propositionBU` (recommandation IA)
  *   → `VeilleFiche.fluxStatut` (ATTENTE_VALIDATION_JURIDIQUE → ATTENTE_APPROBATION_METIER
  *   → APPROUVE_METIER | REJETE_METIER).
+ * - Multi-BU : un texte peut concerner plusieurs BU → une `VeilleFiche` par BU
+ *   cochée (cases à cocher de l'écran nouvelle-alerte) ; le pilotage regroupe
+ *   par `numeroOrdre` et affiche la conformité de chaque BU.
  */
 
 export interface DataverseField {

@@ -173,6 +173,7 @@ export default function NouvelleAlertePage() {
         dateEntreeVigueur: texteOu(data.dateEntreeVigueur, socle.dateEntreeVigueur),
         propositionBU,
         departementResponsable: departement,
+        departementsResponsables: [departement],
         statutConformite: statut,
         libelleAction: texteOu(data.actionsAmelioration, socle.libelleAction),
       };
@@ -198,6 +199,10 @@ export default function NouvelleAlertePage() {
 
   async function enregistrerFiche() {
     if (!resultat) return;
+    if (resultat.departementsResponsables.length === 0) {
+      setErreur("Cochez au moins une BU responsable avant d'enregistrer.");
+      return;
+    }
     setSaving(true);
     setErreur(null);
     try {
@@ -223,6 +228,23 @@ export default function NouvelleAlertePage() {
 
   function set<K extends keyof AlerteAnalyse21>(key: K, value: AlerteAnalyse21[K]) {
     setResultat((prev) => (prev ? { ...prev, [key]: value } : prev));
+    setSaved(false);
+  }
+
+  /** Coche / décoche une BU (un texte peut concerner plusieurs BU). */
+  function basculerBU(code: DepartementCode) {
+    setResultat((prev) => {
+      if (!prev) return prev;
+      const cochees = prev.departementsResponsables.includes(code)
+        ? prev.departementsResponsables.filter((c) => c !== code)
+        : [...prev.departementsResponsables, code];
+      return {
+        ...prev,
+        departementsResponsables: cochees,
+        // La première BU cochée reste l'assignation principale (compatibilité).
+        departementResponsable: cochees[0] ?? prev.departementResponsable,
+      };
+    });
     setSaved(false);
   }
 
@@ -477,31 +499,47 @@ export default function NouvelleAlertePage() {
                 </label>
               </Bloc>
 
-              <Bloc titre="Fiche — assignation département (5 champs)">
+              <Bloc titre="Fiche — assignation multi-BU (cases à cocher)">
                 {resultat.propositionBU && (
                   <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue sm:col-span-2">
                     🤖 Gemini 3.6 Flash recommande la BU :{" "}
                     <span className="font-bold">{resultat.propositionBU}</span>
-                    {" — "}le juridique valide l'assignation ci-dessous
-                    (workflow : attente validation juridique → attente approbation métier).
+                    {" — "}un texte pouvant concerner plusieurs BU, cochez toutes
+                    les BU concernées ci-dessous (une fiche part chez chacune).
                   </p>
                 )}
-                <label className="block rounded-lg border-2 border-brand-gold/60 bg-brand-gold/10 px-3 py-2 text-sm">
-                  <span className="mb-1 block text-[11px] font-bold uppercase tracking-wide text-brand-blue">
-                    13 · Département d&apos;acteurs responsable *
-                  </span>
-                  <select
-                    value={resultat.departementResponsable}
-                    onChange={(e) => set("departementResponsable", e.target.value as DepartementCode)}
-                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue"
-                  >
+                <fieldset className="rounded-lg border-2 border-brand-gold/60 bg-brand-gold/10 px-3 py-2 text-sm sm:col-span-2">
+                  <legend className="bg-white px-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                    13 · BU responsables * ({resultat.departementsResponsables.length} cochée
+                    {resultat.departementsResponsables.length > 1 ? "s" : ""})
+                  </legend>
+                  <div className="grid gap-2 sm:grid-cols-2">
                     {DEPARTEMENT_OPTIONS.map((d) => (
-                      <option key={d.code} value={d.code}>
-                        {d.code === "PATR_IMMO" ? "Patr Immo" : d.code} — {d.label}
-                      </option>
+                      <label
+                        key={d.code}
+                        className="flex cursor-pointer items-center gap-2 rounded-md border border-slate-200 bg-white px-2 py-1.5 text-xs font-medium text-brand-blue hover:border-brand-blue"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={resultat.departementsResponsables.includes(d.code)}
+                          onChange={() => basculerBU(d.code)}
+                          className="h-4 w-4 accent-[#1C3359]"
+                        />
+                        <span>
+                          {d.code === "PATR_IMMO" ? "Patr Immo" : d.code}
+                          <span className="block text-[10px] font-normal text-slate-500">
+                            {d.label}
+                          </span>
+                        </span>
+                      </label>
                     ))}
-                  </select>
-                </label>
+                  </div>
+                  {resultat.departementsResponsables.length === 0 && (
+                    <p className="mt-2 text-xs font-medium text-red-600">
+                      Cochez au moins une BU pour enregistrer la fiche.
+                    </p>
+                  )}
+                </fieldset>
                 <Zone label="14 · Actions conformité existantes" value={resultat.actionsExistantes} onChange={(v) => set("actionsExistantes", v)} compact />
                 <Zone label="15 · Preuves de conformité existantes" value={resultat.preuvesExistantes} onChange={(v) => set("preuvesExistantes", v)} compact />
                 <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
@@ -544,7 +582,8 @@ export default function NouvelleAlertePage() {
 
               {saved && (
                 <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
-                  Ligne {resultat.numeroOrdre} assignée à {resultat.departementResponsable} — prête pour Dataverse (simulation locale).
+                  Ligne {resultat.numeroOrdre} assignée à{" "}
+                  {resultat.departementsResponsables.join(", ")} — prête pour Dataverse (simulation locale).
                 </p>
               )}
 

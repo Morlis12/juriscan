@@ -44,9 +44,11 @@ export interface AlerteAnalyse21 {
   applicableAGLCI: boolean;
   /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable (DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS). */
   propositionBU: DepartementCode | "";
-  // ——— VeilleFiche : 5 champs ———
-  /** 13 — Département d'acteurs responsable (assignation) */
+  // ——— VeilleFiche : 5 champs + assignation multi-BU ———
+  /** 13 — Département d'acteurs responsable (assignation principale, compat). */
   departementResponsable: DepartementCode;
+  /** 13bis — BU cochées : un texte peut concerner plusieurs BU (une fiche par BU). */
+  departementsResponsables: DepartementCode[];
   /** 14 — Actions conformité existantes */
   actionsExistantes: string;
   /** 15 — Preuves de conformité existantes */
@@ -94,6 +96,7 @@ export function creerAlerteVierge(): AlerteAnalyse21 {
     applicableAGLCI: true,
     propositionBU: "",
     departementResponsable: "DJ",
+    departementsResponsables: ["DJ"],
     actionsExistantes: "",
     preuvesExistantes: "",
     statutConformite: "NON_CONFORME_0",

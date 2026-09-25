@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import type { ConformiteStatut, DepartementCode, FluxStatut } from "@/domain/veille";
 import {
@@ -116,6 +116,8 @@ export default function DashboardPage() {
   const [filtreBU, setFiltreBU] = useState<FiltreBUCode>("ALL");
   const [filtreDate, setFiltreDate] = useState("");
   const [filtreType, setFiltreType] = useState("ALL");
+  // Texte déplié : affiche le niveau de conformité de chaque BU pour ce texte.
+  const [texteOuvert, setTexteOuvert] = useState<string | null>(null);
 
   // Message de succès après enregistrement / modification d'une fiche.
   useEffect(() => {
@@ -227,7 +229,6 @@ export default function DashboardPage() {
       return true;
     });
   }, [toutesAlertes, filtreBU, filtreType, filtreDate]);
-
   /** Le juridique valide la fiche IA → bascule vers l'approbation métier. */
   async function validerVersMetier(id: string) {
     setDbAlertes((prev) =>
@@ -245,6 +246,43 @@ export default function DashboardPage() {
       /* démo locale : la transition optimiste suffit */
     }
   }
+
+  /** Regroupement par texte : un texte → N fiches BU (multi-assignation). */
+  interface GroupeTexte {
+    numeroOrdre: string;
+    natureTexte: string;
+    referenceTexte: string;
+    resumeTexte: string;
+    dateEntreeVigueur: string;
+    fiches: AlertePilotee[];
+    tauxMoyen: number;
+  }
+  const groupes = useMemo<GroupeTexte[]>(() => {
+    const carte = new Map<string, GroupeTexte>();
+    for (const a of alertes) {
+      const existant = carte.get(a.numeroOrdre);
+      if (existant) {
+        existant.fiches.push(a);
+      } else {
+        carte.set(a.numeroOrdre, {
+          numeroOrdre: a.numeroOrdre,
+          natureTexte: a.natureTexte,
+          referenceTexte: a.referenceTexte,
+          resumeTexte: a.resumeTexte,
+          dateEntreeVigueur: a.dateEntreeVigueur,
+          fiches: [a],
+          tauxMoyen: 0,
+        });
+      }
+    }
+    const liste = [...carte.values()];
+    for (const g of liste) {
+      g.tauxMoyen = Math.round(
+        g.fiches.reduce((somme, f) => somme + f.tauxAvancement, 0) / g.fiches.length,
+      );
+    }
+    return liste.sort((x, y) => x.numeroOrdre.localeCompare(y.numeroOrdre));
+  }, [alertes]);
 
   const numeros = useMemo(() => new Set(alertes.map((a) => a.numeroOrdre)), [alertes]);
   const actionsPerimetre = useMemo(
@@ -398,7 +436,8 @@ export default function DashboardPage() {
           <p className="text-sm text-slate-500">
             Périmètre : <span className="font-semibold text-brand-blue">{perimetreLabel}</span>
             {" — "}
-            {alertes.length} alerte{alertes.length > 1 ? "s" : ""}
+            {groupes.length} texte{groupes.length > 1 ? "s" : ""} · {alertes.length} fiche
+            {alertes.length > 1 ? "s" : ""} BU
           </p>
           <div className="flex flex-wrap gap-2">
             <Link
@@ -494,103 +533,154 @@ export default function DashboardPage() {
           </div>
         </section>
 
-        {/* TABLEAU DE SUIVI */}
+        {/* TABLEAU DE SUIVI — groupé par texte, conformité détaillée par BU */}
         <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
           <h2 className="bg-brand-blue px-5 py-3 text-base font-bold text-white">
-            Suivi des textes — {perimetreLabel} · Workflow double validation
+            Suivi des textes — {perimetreLabel} · Cliquez un texte pour voir chaque BU
           </h2>
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1020px] text-left text-sm">
+            <table className="w-full min-w-[920px] text-left text-sm">
               <thead>
                 <tr className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
                   <th className="px-4 py-3">N° Ordre</th>
                   <th className="px-4 py-3">Référence du texte</th>
                   <th className="px-4 py-3">Résumé</th>
                   <th className="px-4 py-3">Date d&apos;entrée en vigueur</th>
-                  <th className="px-4 py-3">Taux d&apos;avancement</th>
-                  <th className="px-4 py-3">Statut</th>
-                  <th className="px-4 py-3">Flux JuriScan × JuriDesk</th>
-                  <th className="px-4 py-3">Action juridique</th>
+                  <th className="px-4 py-3">BU concernées</th>
+                  <th className="px-4 py-3">Taux moyen</th>
+                  <th className="px-4 py-3">Conformité par BU</th>
                 </tr>
               </thead>
               <tbody>
-                {alertes.map((a) => (
-                  <tr
-                    key={a.id}
-                    className="border-t border-slate-100 hover:bg-slate-50"
-                  >
-                    <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-brand-blue">
-                      <Link
-                        href={`/dashboard/alertes/${a.id}`}
-                        title="Modifier la fiche"
-                        className="rounded px-1 py-0.5 underline decoration-brand-gold decoration-2 underline-offset-2 hover:bg-brand-blue hover:text-white"
+                {groupes.map((g) => {
+                  const ouvert = texteOuvert === g.numeroOrdre;
+                  return (
+                    <Fragment key={g.numeroOrdre}>
+                      <tr
+                        onClick={() => setTexteOuvert(ouvert ? null : g.numeroOrdre)}
+                        className={`cursor-pointer border-t border-slate-100 hover:bg-slate-50 ${ouvert ? "bg-brand-blue/5" : ""}`}
                       >
-                        {a.numeroOrdre}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className="mb-1 inline-block rounded bg-brand-blue/10 px-1.5 py-0.5 text-[11px] font-semibold text-brand-blue">
-                        {a.natureTexte}
-                      </span>
-                      <span className="block text-xs text-slate-700">
-                        {a.referenceTexte}
-                      </span>
-                    </td>
-                    <td className="max-w-xs px-4 py-3 text-xs text-slate-600">
-                      <span className="line-clamp-2">{a.resumeTexte}</span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-slate-700">
-                      {formatDateFR(a.dateEntreeVigueur)}
-                    </td>
-                    <td className="min-w-36 px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
-                          <div
-                            className="h-full rounded-full bg-brand-blue"
-                            style={{ width: `${a.tauxAvancement}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-semibold tabular-nums text-slate-700">
-                          {a.tauxAvancement} %
-                        </span>
-                      </div>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${BADGE[a.statut]}`}
-                      >
-                        {STATUT_LABEL[a.statut]}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-0.5 text-xs font-semibold ${FLUX_BADGE[a.fluxStatut]}`}
-                      >
-                        {FLUX_STATUT_LABELS[a.fluxStatut]}
-                      </span>
-                    </td>
-                    <td className="whitespace-nowrap px-4 py-3">
-                      {a.fluxStatut === "ATTENTE_VALIDATION_JURIDIQUE" ? (
-                        <button
-                          type="button"
-                          onClick={() => validerVersMetier(a.id)}
-                          className="rounded-lg bg-brand-gold px-3 py-1.5 text-xs font-bold text-brand-blue shadow-sm transition-colors hover:brightness-95"
-                        >
-                          Valider vers métier →
-                        </button>
-                      ) : (
-                        <span className="text-xs text-slate-400">—</span>
+                        <td className="whitespace-nowrap px-4 py-3 font-mono text-xs font-semibold text-brand-blue">
+                          <span className="mr-1 inline-block w-4 text-slate-400">
+                            {ouvert ? "▾" : "▸"}
+                          </span>
+                          <span className="rounded px-1 py-0.5 underline decoration-brand-gold decoration-2 underline-offset-2">
+                            {g.numeroOrdre}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="mb-1 inline-block rounded bg-brand-blue/10 px-1.5 py-0.5 text-[11px] font-semibold text-brand-blue">
+                            {g.natureTexte}
+                          </span>
+                          <span className="block text-xs text-slate-700">
+                            {g.referenceTexte}
+                          </span>
+                        </td>
+                        <td className="max-w-xs px-4 py-3 text-xs text-slate-600">
+                          <span className="line-clamp-2">{g.resumeTexte}</span>
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-slate-700">
+                          {formatDateFR(g.dateEntreeVigueur)}
+                        </td>
+                        <td className="whitespace-nowrap px-4 py-3">
+                          <span className="inline-flex rounded-full bg-brand-blue px-2.5 py-0.5 text-xs font-bold text-white">
+                            {g.fiches.length} BU
+                          </span>
+                        </td>
+                        <td className="min-w-36 px-4 py-3">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                              <div
+                                className="h-full rounded-full bg-brand-blue"
+                                style={{ width: `${g.tauxMoyen}%` }}
+                              />
+                            </div>
+                            <span className="text-xs font-semibold tabular-nums text-slate-700">
+                              {g.tauxMoyen} %
+                            </span>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="flex flex-wrap gap-1">
+                            {g.fiches.map((f) => (
+                              <span
+                                key={f.id}
+                                title={`${f.departement} : ${STATUT_LABEL[f.statut]} (${f.tauxAvancement} %)`}
+                                className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[f.statut]}`}
+                              >
+                                {f.departement} · {f.tauxAvancement} %
+                              </span>
+                            ))}
+                          </span>
+                        </td>
+                      </tr>
+                      {ouvert && (
+                        <tr className="bg-slate-50/70">
+                          <td colSpan={7} className="px-4 py-3">
+                            <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
+                              Niveaux de conformité par BU — {g.numeroOrdre}
+                            </p>
+                            <ul className="grid gap-2 md:grid-cols-2">
+                              {g.fiches.map((f) => (
+                                <li
+                                  key={f.id}
+                                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
+                                >
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-brand-blue">
+                                      {f.departement}
+                                    </p>
+                                    <p className="mt-1 flex flex-wrap items-center gap-1">
+                                      <span
+                                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[f.statut]}`}
+                                      >
+                                        {STATUT_LABEL[f.statut]} · {f.tauxAvancement} %
+                                      </span>
+                                      <span
+                                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${FLUX_BADGE[f.fluxStatut]}`}
+                                      >
+                                        {FLUX_STATUT_LABELS[f.fluxStatut]}
+                                      </span>
+                                    </p>
+                                  </div>
+                                  <div className="flex items-center gap-2">
+                                    <Link
+                                      href={`/dashboard/alertes/${f.id}`}
+                                      title="Modifier la fiche BU"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="rounded-lg border border-brand-blue px-2.5 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white"
+                                    >
+                                      Modifier
+                                    </Link>
+                                    {f.fluxStatut === "ATTENTE_VALIDATION_JURIDIQUE" ? (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          validerVersMetier(f.id);
+                                        }}
+                                        className="rounded-lg bg-brand-gold px-2.5 py-1 text-xs font-bold text-brand-blue shadow-sm hover:brightness-95"
+                                      >
+                                        Valider vers métier →
+                                      </button>
+                                    ) : null}
+                                  </div>
+                                </li>
+                              ))}
+                            </ul>
+                          </td>
+                        </tr>
                       )}
-                    </td>
-                  </tr>
-                ))}
-                {alertes.length === 0 && (
+                    </Fragment>
+                  );
+                })}
+                {groupes.length === 0 && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={7}
                       className="px-4 py-8 text-center text-sm text-slate-400"
                     >
-                      Aucune alerte sur ce périmètre. Ajustez les filtres BU / Date / Type.
+                      Aucun texte sur ce périmètre. Ajustez les filtres BU / Date / Type.
                     </td>
                   </tr>
                 )}
