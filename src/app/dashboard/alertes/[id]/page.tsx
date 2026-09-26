@@ -7,6 +7,7 @@ import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/ve
 import { NATURES_TEXTE } from "@/domain/veille";
 import { estJuridique, messageAccesRefuse, peutModifierFiche } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import { LogoAGL } from "@/components/LogoAGL";
 import type { JournalEntree } from "@/domain/historique";
 import { HISTORIQUE_ACTION_LABELS } from "@/domain/historique";
 import {
@@ -266,9 +267,7 @@ export default function ModifierAlertePage() {
       <header className="sticky top-0 z-50 bg-brand-blue text-white shadow-md">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-gold text-sm font-black text-brand-blue">
-              AGL
-            </div>
+            <LogoAGL />
             <div>
               <p className="text-lg font-bold leading-tight">Modifier la fiche — JuriScan AI</p>
               <p className="font-mono text-xs text-slate-300">{params.id}</p>

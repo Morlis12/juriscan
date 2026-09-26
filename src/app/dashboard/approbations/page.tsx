@@ -15,6 +15,7 @@ import {
 } from "@/domain/veille";
 import { messageAccesRefuse, peutStatuerAssignation } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import { LogoAGL } from "@/components/LogoAGL";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
 import {
   PreuveFichierInput,
@@ -334,9 +335,7 @@ export default function ApprobationsPage() {
       <header className="sticky top-0 z-50 bg-brand-blue text-white shadow-md">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-gold text-sm font-black text-brand-blue">
-              AGL
-            </div>
+            <LogoAGL />
             <div>
               <p className="text-lg font-bold leading-tight">
                 Approbations métier — JuriDesk

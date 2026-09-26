@@ -11,6 +11,7 @@ import {
   type JournalEntree,
 } from "@/domain/historique";
 import { SelecteurBUConnectee, useBuConnectee } from "@/components/ContexteBU";
+import { LogoAGL } from "@/components/LogoAGL";
 
 /**
  * JuriScan AI — Historique des modifications (traçabilité SCD2, consultable).
@@ -82,9 +83,7 @@ function HistoriqueContenu() {
       <header className="sticky top-0 z-50 bg-brand-blue text-white shadow-md">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-brand-gold text-sm font-black text-brand-blue">
-              🕘
-            </div>
+            <LogoAGL />
             <div>
               <p className="text-lg font-bold leading-tight">Historique des modifications — SCD2</p>
               <p className="text-xs text-slate-300">
