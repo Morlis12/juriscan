@@ -16,6 +16,9 @@ import { CLE_BU_CONNECTEE, CLE_EMAIL_CONNECTE, estJuridique } from "@/domain/acc
 
 const BU_DEFAUT: DepartementCode = "DJ";
 
+/** Event même-onglet : `storage` ne se déclenche que entre onglets distincts. */
+const EVENT_BU = "juriscan:bu-connectee-change";
+
 function lireBU(): DepartementCode {
   try {
     const v = window.localStorage.getItem(CLE_BU_CONNECTEE) as DepartementCode | null;
@@ -41,22 +44,22 @@ export function useBuConnectee() {
   const [pret, setPret] = useState(false);
 
   useEffect(() => {
-    const onStockage = (e: StorageEvent) => {
-      if (e.key === CLE_BU_CONNECTEE && e.newValue && e.newValue in DEPARTEMENTS) {
-        setBu(e.newValue as DepartementCode);
-      }
-      if (e.key === CLE_EMAIL_CONNECTE) setEmail(e.newValue ?? "");
+    // Relecture du choix persisté (même onglet via EVENT_BU, autres onglets via storage).
+    const resync = () => {
+      setBu(lireBU());
+      setEmail(lireEmail());
     };
-    window.addEventListener("storage", onStockage);
+    window.addEventListener("storage", resync);
+    window.addEventListener(EVENT_BU, resync);
     // Synchronise l'onglet courant après hydratation (choix persisté) :
     // lecture différée intentionnelle — évite le mismatch d'hydratation SSR.
     const raf = requestAnimationFrame(() => {
-      setBu(lireBU());
-      setEmail(lireEmail());
+      resync();
       setPret(true);
     });
     return () => {
-      window.removeEventListener("storage", onStockage);
+      window.removeEventListener("storage", resync);
+      window.removeEventListener(EVENT_BU, resync);
       cancelAnimationFrame(raf);
     };
   }, []);
@@ -65,6 +68,8 @@ export function useBuConnectee() {
     setBu(code);
     try {
       window.localStorage.setItem(CLE_BU_CONNECTEE, code);
+      // Propage aux autres instances du même onglet (écran + contrôles d'accès).
+      window.dispatchEvent(new Event(EVENT_BU));
     } catch {
       /* stockage indisponible */
     }
@@ -74,6 +79,7 @@ export function useBuConnectee() {
     setEmail(v);
     try {
       window.localStorage.setItem(CLE_EMAIL_CONNECTE, v);
+      window.dispatchEvent(new Event(EVENT_BU));
     } catch {
       /* stockage indisponible */
     }

@@ -98,7 +98,7 @@ export default function ApprobationsPage() {
   // File affichée (démo) + BU réellement connectée (cloisonnement) : seule la
   // BU connectée peut approuver / rejeter ses assignations.
   const [bu, setBu] = useState<BUConcernee>("DRH");
-  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
+  const { bu: buConnectee, email: emailConnecte, changerBU: connecterBU } = useBuConnectee();
   const [fiches, setFiches] = useState<FicheApprobation[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [formOuvert, setFormOuvert] = useState<string | null>(null);
@@ -373,9 +373,9 @@ export default function ApprobationsPage() {
                 File d&apos;approbation affichée
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                Filtre d&apos;affichage (DRH, DAF…) — mais seules les fiches de votre BU
-                connectée ({buConnectee}) sont approuvables / rejetables (les autres sont
-                verrouillées 🔒). Basculez la BU connectée en haut pour changer de périmètre d&apos;action.
+                Choisissez la file à afficher — ce choix connecte aussi cette BU (sélecteur en haut
+                synchronisé) : ses fiches deviennent approuvables / rejetables, les autres restent
+                verrouillées 🔒. Connecté : <span className="font-semibold">{buConnectee}</span>.
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -385,7 +385,9 @@ export default function ApprobationsPage() {
               <select
                 value={bu}
                 onChange={(e) => {
-                  setBu(e.target.value as BUConcernee);
+                  const code = e.target.value as BUConcernee;
+                  setBu(code);
+                  connecterBU(code);
                   setFormOuvert(null);
                   setMessage(null);
                 }}
