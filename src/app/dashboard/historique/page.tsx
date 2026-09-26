@@ -10,6 +10,7 @@ import {
   type HistoriqueAction,
   type JournalEntree,
 } from "@/domain/historique";
+import { HISTORIQUE_DEMO } from "@/data/historique-demo";
 import { SelecteurBUConnectee, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 
@@ -40,14 +41,22 @@ function HistoriqueContenu() {
   useEffect(() => {
     let actif = true;
     // `chargement` vaut déjà true à l'état initial (pas de setState synchrone ici).
+    // Données réelles (SQL) + démo (mocks) fusionnées, plus récentes d'abord.
     fetch("/api/historique?take=200")
       .then((r) => (r.ok ? r.json() : null))
       .then((payload: { success?: boolean; data?: JournalEntree[] } | null) => {
-        if (actif && payload?.success && Array.isArray(payload.data)) {
-          setEntrees(payload.data);
-        }
+        if (!actif) return;
+        const reelles =
+          payload?.success && Array.isArray(payload.data) ? payload.data : [];
+        setEntrees(
+          [...reelles, ...HISTORIQUE_DEMO].sort((a, b) =>
+            b.createdAt.localeCompare(a.createdAt),
+          ),
+        );
       })
-      .catch(() => {})
+      .catch(() => {
+        if (actif) setEntrees([...HISTORIQUE_DEMO]);
+      })
       .finally(() => {
         if (actif) setChargement(false);
       });
@@ -59,11 +68,11 @@ function HistoriqueContenu() {
   const filtrees = useMemo(() => {
     const terme = recherche.trim().toLowerCase();
     return entrees.filter((e) => {
-      if (ficheFiltre && e.ficheId !== ficheFiltre && ficheFiltre !== e.ficheId) {
-        // Le filtre `fiche` transporte l'id de route `db-<alerte>-<fiche>` ;
-        // on compare aussi au ficheId brut.
-        const brut = ficheFiltre.startsWith("db-") ? ficheFiltre.slice(3).split("-").slice(7).join("-") : ficheFiltre;
-        if (e.ficheId !== brut && e.ficheId !== ficheFiltre) return false;
+      if (ficheFiltre) {
+        // Id de route `db-<alerteId>-<ficheId>` (le ficheId = 36 derniers
+        // caractères) ou id direct (`mock-*`, uuid) : compare les deux formes.
+        const ficheId = ficheFiltre.startsWith("db-") ? ficheFiltre.slice(-36) : ficheFiltre;
+        if (e.ficheId !== ficheFiltre && e.ficheId !== ficheId) return false;
       }
       if (filtreBU !== "ALL" && e.buAuteur !== filtreBU) return false;
       if (filtreAction !== "ALL" && e.action !== filtreAction) return false;
@@ -203,6 +212,12 @@ function HistoriqueContenu() {
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <p className="text-sm font-bold text-brand-blue">
                       {HISTORIQUE_ACTION_LABELS[(e.action as HistoriqueAction)] ?? e.action}
+                      <span
+                        title={e.id.startsWith("demo-") ? "Historique simulé (données démo, sans base)" : "Historique réel (SCD2, base SQL)"}
+                        className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${e.id.startsWith("demo-") ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}
+                      >
+                        {e.id.startsWith("demo-") ? "démo" : "SQL"}
+                      </span>
                       {e.numeroOrdre && (
                         <span className="ml-2 font-mono text-xs font-semibold text-slate-500">{e.numeroOrdre}</span>
                       )}

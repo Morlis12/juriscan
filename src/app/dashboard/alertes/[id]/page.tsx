@@ -5,11 +5,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/veille";
 import { NATURES_TEXTE } from "@/domain/veille";
-import { estJuridique, messageAccesRefuse, peutModifierFiche } from "@/domain/acces";
+import { estCentrale, messageAccesRefuse, peutOuvrirFiche } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import type { JournalEntree } from "@/domain/historique";
 import { HISTORIQUE_ACTION_LABELS } from "@/domain/historique";
+import { HISTORIQUE_DEMO } from "@/data/historique-demo";
 import {
   DEPARTEMENT_OPTIONS,
   creerAlerteVierge,
@@ -184,10 +185,29 @@ export default function ModifierAlertePage() {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
-  // Historique SCD2 de la fiche (repli silencieux si DB absente / démo).
+  // Droits champ par champ (strict) : texte + réassignation = centrale,
+  // conformité + action = BU propriétaire. Les autres : lecture seule.
+  const centrale = estCentrale(buConnectee);
+  const proprietaire = ficheBU !== null && buConnectee === ficheBU;
+  const texteEditable = centrale;
+  const conformiteEditable = proprietaire;
+  const lectureSeule = ficheBU !== null && !centrale && !proprietaire;
+
+  // Historique de la fiche : réel (SCD2, SQL) ou simulé (démo, mocks).
   useEffect(() => {
-    if (params.id.startsWith("mock-")) return;
     let actif = true;
+    // Démonstration : historique simulé aligné sur le workflow (sans base).
+    if (params.id.startsWith("mock-")) {
+      const t = setTimeout(() => {
+        if (actif) {
+          setHistorique(HISTORIQUE_DEMO.filter((h) => h.ficheId === params.id));
+        }
+      }, 0);
+      return () => {
+        actif = false;
+        clearTimeout(t);
+      };
+    }
     fetch(`/api/veille/${params.id}/historique`)
       .then((r) => (r.ok ? r.json() : null))
       .then((payload: { success?: boolean; data?: { journal?: JournalEntree[] } } | null) => {
@@ -203,12 +223,12 @@ export default function ModifierAlertePage() {
 
   async function enregistrer() {
     if (!form) return;
-    if (ficheBU && !peutModifierFiche(buConnectee, ficheBU)) {
+    if (ficheBU && !peutOuvrirFiche(buConnectee, ficheBU)) {
       setErreur(messageAccesRefuse(buConnectee, ficheBU));
       return;
     }
-    if (form.departementResponsable !== ficheBU && !estJuridique(buConnectee)) {
-      setErreur("Réassignation vers une autre BU : réservée au juridique.");
+    if (form.departementResponsable !== ficheBU && !centrale) {
+      setErreur("Réassignation vers une autre BU : réservée à la centrale (CENTRAL_VRG).");
       return;
     }
     setSaving(true);
@@ -340,19 +360,23 @@ export default function ModifierAlertePage() {
                   Responsable non rattaché (aucun User avec cet email) — autres champs enregistrés.
                 </p>
               )}
-              {ficheBU && !peutModifierFiche(buConnectee, ficheBU) ? (
+              {ficheBU && lectureSeule ? (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
                   🔒 Fiche {ficheBU} en lecture seule — vous êtes connecté en {buConnectee}. Basculez la BU en haut pour modifier.
                 </p>
-              ) : ficheBU && !estJuridique(buConnectee) ? (
+              ) : ficheBU && centrale && !proprietaire ? (
                 <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue">
-                  Texte source figé (réservé au juridique) — vous pilotez la conformité {ficheBU} (preuves, statut, action, délai, taux).
+                  Centrale : vous modifiez le texte source et la réassignation — la conformité {ficheBU} reste pilotée par sa BU.
+                </p>
+              ) : ficheBU && proprietaire && !centrale ? (
+                <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue">
+                  Texte source figé (réservé à la centrale) — vous pilotez la conformité {ficheBU} (preuves, statut, action, délai, taux).
                 </p>
               ) : null}
 
               <Bloc titre="Alerte — texte source (12 champs)">
-                <Champ label="01 · N° d'ordre" value={form.numeroOrdre} onChange={(v) => set("numeroOrdre", v)} mono />
-                <Champ label="02 · QSSTE" value={form.qssfte} onChange={(v) => set("qssfte", v)} mono />
+                <Champ label="01 · N° d'ordre" value={form.numeroOrdre} onChange={(v) => set("numeroOrdre", v)} mono disabled={!texteEditable} />
+                <Champ label="02 · QSSTE" value={form.qssfte} onChange={(v) => set("qssfte", v)} mono disabled={!texteEditable} />
                 <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     03 · Nature du texte
@@ -360,7 +384,8 @@ export default function ModifierAlertePage() {
                   <select
                     value={NATURES_TEXTE.includes(form.natureTexte as NatureTexte) ? form.natureTexte : ""}
                     onChange={(e) => set("natureTexte", e.target.value)}
-                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white"
+                    disabled={!texteEditable}
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     <option value="" disabled>
                       — Choisir la nature —
@@ -376,20 +401,21 @@ export default function ModifierAlertePage() {
                       )}
                   </select>
                 </label>
-                <Champ label="04 · Référence du texte" value={form.referenceTexte} onChange={(v) => set("referenceTexte", v)} />
-                <Champ label="05 · Article" value={form.article} onChange={(v) => set("article", v)} />
-                <Zone label="06 · Résumé du texte" value={form.resumeTexte} onChange={(v) => set("resumeTexte", v)} />
-                <Zone label="07 · Libellé / texte applicable en vigueur" value={form.libelleApplicable} onChange={(v) => set("libelleApplicable", v)} />
-                <Champ label="08 · Lien hypertexte" value={form.lienHypertexte} onChange={(v) => set("lienHypertexte", v)} mono />
-                <Champ label="09 · Date d'entrée en vigueur" type="date" value={form.dateEntreeVigueur} onChange={(v) => set("dateEntreeVigueur", v)} />
-                <Zone label="10 · Contenu brut extrait" value={form.contenu} onChange={(v) => set("contenu", v)} compact />
-                <Champ label="11 · Moyen de communication" value={form.moyenCommunication} onChange={(v) => set("moyenCommunication", v)} />
+                <Champ label="04 · Référence du texte" value={form.referenceTexte} onChange={(v) => set("referenceTexte", v)} disabled={!texteEditable} />
+                <Champ label="05 · Article" value={form.article} onChange={(v) => set("article", v)} disabled={!texteEditable} />
+                <Zone label="06 · Résumé du texte" value={form.resumeTexte} onChange={(v) => set("resumeTexte", v)} disabled={!texteEditable} />
+                <Zone label="07 · Libellé / texte applicable en vigueur" value={form.libelleApplicable} onChange={(v) => set("libelleApplicable", v)} disabled={!texteEditable} />
+                <Champ label="08 · Lien hypertexte" value={form.lienHypertexte} onChange={(v) => set("lienHypertexte", v)} mono disabled={!texteEditable} />
+                <Champ label="09 · Date d'entrée en vigueur" type="date" value={form.dateEntreeVigueur} onChange={(v) => set("dateEntreeVigueur", v)} disabled={!texteEditable} />
+                <Zone label="10 · Contenu brut extrait" value={form.contenu} onChange={(v) => set("contenu", v)} compact disabled={!texteEditable} />
+                <Champ label="11 · Moyen de communication" value={form.moyenCommunication} onChange={(v) => set("moyenCommunication", v)} disabled={!texteEditable} />
                 <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <input
                     type="checkbox"
                     checked={form.applicableAGLCI}
+                    disabled={!texteEditable}
                     onChange={(e) => set("applicableAGLCI", e.target.checked)}
-                    className="h-4 w-4 accent-[#1C3359]"
+                    className="h-4 w-4 accent-[#1C3359] disabled:cursor-not-allowed"
                   />
                   <span>
                     <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -408,7 +434,9 @@ export default function ModifierAlertePage() {
                   <select
                     value={form.departementResponsable}
                     onChange={(e) => set("departementResponsable", e.target.value as DepartementCode)}
-                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue"
+                    disabled={!centrale}
+                    title={centrale ? "Réassigner vers une autre BU (centrale)" : "Réassignation : réservée à la centrale"}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {DEPARTEMENT_OPTIONS.map((d) => (
                       <option key={d.code} value={d.code}>
@@ -417,13 +445,25 @@ export default function ModifierAlertePage() {
                     ))}
                   </select>
                 </label>
-                <Zone label="14 · Actions conformité existantes" value={form.actionsExistantes} onChange={(v) => set("actionsExistantes", v)} compact />
-                <Zone label="15 · Preuves de conformité existantes" value={form.preuvesExistantes} onChange={(v) => set("preuvesExistantes", v)} compact />
+                <Zone label="14 · Actions conformité existantes" value={form.actionsExistantes} onChange={(v) => set("actionsExistantes", v)} compact disabled={!conformiteEditable} />
+                <Zone label="15 · Preuves de conformité existantes" value={form.preuvesExistantes} onChange={(v) => set("preuvesExistantes", v)} compact disabled={!conformiteEditable} />
                 <div className="rounded-lg border border-slate-200 px-3 py-2 text-sm sm:col-span-2">
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-                    Document de preuve joint (PDF, image — 8 Mo max)
+                    Document de preuve joint (PDF, image — 8 Mo max){!conformiteEditable ? " 🔒" : ""}
                   </span>
-                  <PreuveFichierInput valeur={preuveFichier} onChange={setPreuveFichier} />
+                  {conformiteEditable ? (
+                    <PreuveFichierInput valeur={preuveFichier} onChange={setPreuveFichier} />
+                  ) : preuveFichier ? (
+                    <a
+                      href={`data:${preuveFichier.mime};base64,${preuveFichier.donnees}`}
+                      download={preuveFichier.nom}
+                      className="inline-block max-w-full truncate text-xs font-semibold text-brand-blue underline decoration-brand-gold decoration-2 underline-offset-2"
+                    >
+                      📎 {preuveFichier.nom}
+                    </a>
+                  ) : (
+                    <p className="text-xs text-slate-400">Aucun document (lecture seule).</p>
+                  )}
                 </div>
                 <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
@@ -432,7 +472,8 @@ export default function ModifierAlertePage() {
                   <select
                     value={form.statutConformite}
                     onChange={(e) => set("statutConformite", e.target.value as AlerteAnalyse21["statutConformite"])}
-                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5"
+                    disabled={!conformiteEditable}
+                    className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 disabled:cursor-not-allowed disabled:opacity-70"
                   >
                     {STATUTS.map((s) => (
                       <option key={s.code} value={s.code}>
@@ -441,17 +482,18 @@ export default function ModifierAlertePage() {
                     ))}
                   </select>
                 </label>
-                <Zone label="17 · Preuve de conformité différée" value={form.preuveDifferee} onChange={(v) => set("preuveDifferee", v)} compact />
+                <Zone label="17 · Preuve de conformité différée" value={form.preuveDifferee} onChange={(v) => set("preuveDifferee", v)} compact disabled={!conformiteEditable} />
               </Bloc>
 
               <Bloc titre="Action d'amélioration (4 champs)">
-                <Zone label="18 · Action d'amélioration" value={form.libelleAction} onChange={(v) => set("libelleAction", v)} compact />
+                <Zone label="18 · Action d'amélioration" value={form.libelleAction} onChange={(v) => set("libelleAction", v)} compact disabled={!conformiteEditable} />
                 <Champ
                   label="19 · Responsable (email d'un User existant pour rattacher)"
                   value={form.responsable}
                   onChange={(v) => set("responsable", v)}
+                  disabled={!conformiteEditable}
                 />
-                <Champ label="20 · Délai" type="date" value={form.delai} onChange={(v) => set("delai", v)} />
+                <Champ label="20 · Délai" type="date" value={form.delai} onChange={(v) => set("delai", v)} disabled={!conformiteEditable} />
                 <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     21 · Taux d&apos;avancement — {form.tauxAvancement} %
@@ -461,8 +503,9 @@ export default function ModifierAlertePage() {
                     min={0}
                     max={100}
                     value={form.tauxAvancement}
+                    disabled={!conformiteEditable}
                     onChange={(e) => set("tauxAvancement", Number(e.target.value))}
-                    className="w-full accent-[#1C3359]"
+                    className="w-full accent-[#1C3359] disabled:cursor-not-allowed disabled:opacity-40"
                   />
                 </label>
               </Bloc>
@@ -470,8 +513,8 @@ export default function ModifierAlertePage() {
               <button
                 type="button"
                 onClick={enregistrer}
-                disabled={saving || (!!ficheBU && !peutModifierFiche(buConnectee, ficheBU))}
-                title={ficheBU && !peutModifierFiche(buConnectee, ficheBU) ? messageAccesRefuse(buConnectee, ficheBU) : "Enregistrer (tracé SCD2)"}
+                disabled={saving || (!!ficheBU && !peutOuvrirFiche(buConnectee, ficheBU))}
+                title={ficheBU && !peutOuvrirFiche(buConnectee, ficheBU) ? messageAccesRefuse(buConnectee, ficheBU) : "Enregistrer (tracé SCD2)"}
                 className="w-full rounded-xl bg-brand-blue px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-brand-blue/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Enregistrement en cours…" : "💾 Enregistrer les Modifications"}
@@ -480,8 +523,8 @@ export default function ModifierAlertePage() {
           </section>
         )}
 
-        {/* Historique SCD2 de la fiche — traçabilité consultable */}
-        {form && !params.id.startsWith("mock-") && (
+        {/* Historique de la fiche — réel (SCD2) ou simulé (démo) */}
+        {form && (
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2 bg-brand-blue px-5 py-3">
               <h2 className="text-base font-bold text-white">🕘 Historique des modifications (SCD2)</h2>
@@ -546,21 +589,24 @@ function Champ({
   onChange,
   type = "text",
   mono = false,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   type?: string;
   mono?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
-      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+    <label className={`block rounded-lg border border-slate-200 px-3 py-2 text-sm ${disabled ? "bg-slate-50 opacity-70" : ""}`}>
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}{disabled ? " 🔒" : ""}</span>
       <input
         type={type}
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
-        className={`w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white ${mono ? "font-mono text-xs" : ""}`}
+        className={`w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white disabled:cursor-not-allowed ${mono ? "font-mono text-xs" : ""}`}
       />
     </label>
   );
@@ -571,20 +617,23 @@ function Zone({
   value,
   onChange,
   compact = false,
+  disabled = false,
 }: {
   label: string;
   value: string;
   onChange: (v: string) => void;
   compact?: boolean;
+  disabled?: boolean;
 }) {
   return (
-    <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm sm:col-span-2">
-      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}</span>
+    <label className={`block rounded-lg border border-slate-200 px-3 py-2 text-sm sm:col-span-2 ${disabled ? "bg-slate-50 opacity-70" : ""}`}>
+      <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{label}{disabled ? " 🔒" : ""}</span>
       <textarea
         value={value}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.value)}
         rows={compact ? 2 : 3}
-        className="w-full resize-y rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white"
+        className="w-full resize-y rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white disabled:cursor-not-allowed"
       />
     </label>
   );

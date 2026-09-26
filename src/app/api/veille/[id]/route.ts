@@ -1,15 +1,16 @@
 import { NextResponse } from "next/server";
 
 /**
- * JuriScan AI — Fiche individuelle persistée (édition cloisonnée par BU + SCD2).
+ * JuriScan AI — Fiche individuelle persistée (cloisonnement strict + SCD2).
  *
  * - GET /api/veille/[id] : alerte + fiche + action (21 colonnes, lecture pour tous).
- * - PUT /api/veille/[id] : texte source réservé au JURIDIQUE ; champs BU réservés
- *   à la BU propriétaire (juridique global). Chaque modification fige l'ancienne
- *   image en `Veille*Version` (SCD2) et écrit `VeilleJournal` (consultable).
- * - PATCH /api/veille/[id] : workflow + pilotage BU avec la même matrice :
- *   validation/renvoi/réassignation = juridique ; approbation/rejet/taux/preuves
- *   = BU propriétaire. 403 si la BU connectée (`x-bu-connectee`) n'a pas la main.
+ * - PUT /api/veille/[id] : texte source + réassignation = CENTRALE uniquement ;
+ *   conformité + action = BU propriétaire uniquement (DJ incluse, sans exception).
+ *   Chaque groupe modifié fige l'ancienne image en `Veille*Version` (SCD2) et
+ *   écrit `VeilleJournal` (consultable).
+ * - PATCH /api/veille/[id] : validation/renvoi = centrale ; approbation/rejet/
+ *   taux/preuves = BU propriétaire. 403 si la BU connectée (`x-bu-connectee`)
+ *   n'a pas la main.
  */
 
 import { prisma } from "@/lib/prisma";
@@ -39,8 +40,7 @@ import {
   type FluxStatut,
 } from "@/domain/veille";
 import {
-  estJuridique,
-  peutModifierFiche,
+  estCentrale,
 } from "@/domain/acces";
 
 function dateOuNull(v: unknown): Date | null {
@@ -135,7 +135,7 @@ export async function PUT(
       return NextResponse.json({ error: "Statut de conformité invalide." }, { status: 400 });
     }
 
-    // Cloisonnement BU : lecture de la fiche avant tout.
+    // Cloisonnement strict : centrale (texte + réassignation) vs BU propriétaire (conformité).
     const existant = await prisma.veilleFiche.findUnique({
       where: { id: cible.ficheId },
       include: { actionsAmelioration: { orderBy: { createdAt: "desc" }, take: 1 } },
@@ -143,16 +143,17 @@ export async function PUT(
     if (!existant || existant.alerteId !== cible.alerteId) {
       return NextResponse.json({ error: "Fiche introuvable." }, { status: 404 });
     }
-    if (!peutModifierFiche(auteur.bu, existant.departement)) {
+    const alerteAvant = await prisma.veilleAlerte.findUnique({
+      where: { id: cible.alerteId },
+    });
+    if (!alerteAvant) {
+      return NextResponse.json({ error: "Fiche introuvable." }, { status: 404 });
+    }
+    const centrale = estCentrale(auteur.bu);
+    const proprietaire = auteur.bu === existant.departement;
+    if (!centrale && !proprietaire) {
       return NextResponse.json(
         { error: `Réservé aux membres ${existant.departement} (vous êtes ${auteur.bu}).` },
-        { status: 403 },
-      );
-    }
-    // Réassignation vers une autre BU : juridique uniquement.
-    if (departement !== existant.departement && !estJuridique(auteur.bu)) {
-      return NextResponse.json(
-        { error: "Réassignation vers une autre BU : réservée au juridique." },
         { status: 403 },
       );
     }
@@ -189,41 +190,102 @@ export async function PUT(
     const actionId = typeof b.actionId === "string" && b.actionId ? b.actionId : null;
     const actionAvant = existant.actionsAmelioration[0] ?? null;
     const maintenant = new Date();
-    const juridique = estJuridique(auteur.bu);
-    // BU métier : texte source figé (juridique uniquement) ; conformité modifiable.
-    const toucheTexte =
-      numeroOrdre !== undefined &&
-      (await prisma.veilleAlerte
-        .findUnique({ where: { id: cible.alerteId } })
-        .then(
-          (a) =>
-            !!a &&
-            (a.numeroOrdre !== numeroOrdre ||
-              a.natureTexte !== natureTexte ||
-              a.referenceTexte !== referenceTexte),
-        ));
-    if (toucheTexte && !juridique) {
+
+    // --- Détection des groupes touchés (avant/après normalisés) ---
+    const isoJour = (d: Date | null): string =>
+      d ? d.toISOString().slice(0, 10) : "";
+    const texteAvant = {
+      numeroOrdre: alerteAvant.numeroOrdre,
+      qssfte: alerteAvant.qssfte ?? "",
+      natureTexte: alerteAvant.natureTexte,
+      referenceTexte: alerteAvant.referenceTexte,
+      article: alerteAvant.article ?? "",
+      resumeTexte: alerteAvant.resumeTexte,
+      libelleApplicable: alerteAvant.libelleApplicable,
+      lienHypertexte: alerteAvant.lienHypertexte ?? "",
+      dateEntreeVigueur: isoJour(alerteAvant.dateEntreeVigueur),
+      contenu: alerteAvant.contenu,
+      moyenCommunication: alerteAvant.moyenCommunication ?? "",
+      applicableAGLCI: alerteAvant.applicableA_AGL_CI,
+    };
+    const texteApres = {
+      numeroOrdre,
+      qssfte: chaine(b.qssfte).trim(),
+      natureTexte,
+      referenceTexte,
+      article: chaine(b.article).trim(),
+      resumeTexte,
+      libelleApplicable,
+      lienHypertexte: chaine(b.lienHypertexte).trim(),
+      dateEntreeVigueur: chaine(b.dateEntreeVigueur).trim().slice(0, 10),
+      contenu: chaine(b.contenu).trim() || resumeTexte,
+      moyenCommunication: chaine(b.moyenCommunication).trim(),
+      applicableAGLCI: b.applicableAGLCI !== false,
+    };
+    const champsTexte = diffChamps(texteAvant, texteApres);
+    const toucheTexte = champsTexte.length > 0;
+
+    const confAvant = {
+      statutConformite: existant.statutConformite,
+      preuveDifferee: existant.preuveDifferee ?? "",
+      actionsExistantes: existant.actionsExistantes ?? "",
+      preuvesExistantes: existant.preuvesExistantes ?? "",
+    };
+    const confApres = {
+      statutConformite: statut,
+      preuveDifferee: chaine(b.preuveDifferee).trim(),
+      actionsExistantes: chaine(b.actionsExistantes).trim(),
+      preuvesExistantes: chaine(b.preuvesExistantes).trim(),
+    };
+    // Document joint : fourni (remplacement) ou demande de suppression alors qu'un fichier existe.
+    const fichierTouche =
+      preuveFichier !== null &&
+      (preuveFichier.donnees !== null || existant.preuveFichierDonnees !== null);
+    const champsConf = [...diffChamps(confAvant, confApres), ...(fichierTouche ? ["preuveFichier"] : [])];
+
+    const delaiAvant = actionAvant?.delai ? isoJour(actionAvant.delai) : "";
+    const delaiApres =
+      typeof b.delai === "string" ? b.delai.trim().slice(0, 10) : "";
+    const actionTouchee =
+      libelleAction !== (actionAvant?.libelleAction ?? "") ||
+      delaiApres !== delaiAvant ||
+      taux !== (actionAvant ? Math.round(actionAvant.tauxAvancement) : 0) ||
+      respTexte !== "";
+    // Sans libellé ni action ciblée, le taux seul ne crée rien (comme avant) : ignoré.
+    const actionAgit = actionTouchee && (libelleAction !== "" || actionId !== null);
+
+    const reassignee = departement !== existant.departement;
+
+    // --- Autorisations par groupe (strict) ---
+    if (reassignee && !centrale) {
       return NextResponse.json(
-        { error: "Texte source : réservé au juridique (la BU pilote sa conformité)." },
+        { error: "Réassignation vers une autre BU : réservée à la centrale (CENTRAL_VRG)." },
         { status: 403 },
       );
     }
-
-    const avantFiche = {
-      departement: existant.departement,
-      statutConformite: existant.statutConformite,
-      preuveDifferee: existant.preuveDifferee,
-      actionsExistantes: existant.actionsExistantes,
-      preuvesExistantes: existant.preuvesExistantes,
-    };
+    if (toucheTexte && !centrale) {
+      return NextResponse.json(
+        { error: "Texte source : réservé à la centrale (la BU pilote sa conformité)." },
+        { status: 403 },
+      );
+    }
+    if ((champsConf.length > 0 || actionAgit) && !proprietaire) {
+      return NextResponse.json(
+        { error: `Conformité : réservée aux membres ${existant.departement} (vous êtes ${auteur.bu}).` },
+        { status: 403 },
+      );
+    }
+    if (!toucheTexte && !reassignee && champsConf.length === 0 && !actionAgit) {
+      return NextResponse.json({ success: true, inchange: true, responsableNonLie });
+    }
 
     await prisma.$transaction(async (tx) => {
-      // SCD2 : fige l'ancienne fiche + ancienne action avant écrasement.
-      await versionnerFiche(tx, existant, "PUT modification fiche", auteur, maintenant);
-      if (actionAvant) {
-        await versionnerAction(tx, actionAvant, "PUT modification action", auteur, maintenant);
+      // SCD2 : fige uniquement les entités réellement touchées.
+      const ficheTouchee = champsConf.length > 0 || reassignee;
+      if (ficheTouchee) {
+        await versionnerFiche(tx, existant, "PUT modification fiche", auteur, maintenant);
       }
-      if (juridique) {
+      if (toucheTexte) {
         await tx.veilleAlerte.update({
           where: { id: cible.alerteId },
           data: {
@@ -242,36 +304,43 @@ export async function PUT(
           },
         });
       }
-      await tx.veilleFiche.update({
-        where: { id: cible.ficheId },
-        data: {
-          ...(juridique ? { departement: departement as DepartementCode } : {}),
-          actionsExistantes: chaine(b.actionsExistantes).trim() || null,
-          preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
-          statutConformite: statut as ConformiteStatut,
-          preuveDifferee: chaine(b.preuveDifferee).trim() || null,
-          version: { increment: 1 },
-          validFrom: maintenant,
-          modifiedByBU: auteur.bu,
-          modifiedByEmail: auteur.email,
-          ...(preuveFichier
-            ? {
-                preuveFichierNom: preuveFichier.nom,
-                preuveFichierMime: preuveFichier.mime,
-                preuveFichierDonnees: preuveFichier.donnees,
-              }
-            : {}),
-        },
-      });
+      if (ficheTouchee) {
+        await tx.veilleFiche.update({
+          where: { id: cible.ficheId },
+          data: {
+            ...(reassignee ? { departement: departement as DepartementCode } : {}),
+            ...(champsConf.length > 0
+              ? {
+                  actionsExistantes: chaine(b.actionsExistantes).trim() || null,
+                  preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
+                  statutConformite: statut as ConformiteStatut,
+                  preuveDifferee: chaine(b.preuveDifferee).trim() || null,
+                  ...(preuveFichier
+                    ? {
+                        preuveFichierNom: preuveFichier.nom,
+                        preuveFichierMime: preuveFichier.mime,
+                        preuveFichierDonnees: preuveFichier.donnees,
+                      }
+                    : {}),
+                }
+              : {}),
+            version: { increment: 1 },
+            validFrom: maintenant,
+            modifiedByBU: auteur.bu,
+            modifiedByEmail: auteur.email,
+          },
+        });
+      }
       let newActionId: string | null = actionId;
-      if (libelleAction) {
+      if (actionAgit) {
         const donneesAction = {
           libelleAction,
           delai: dateOuNull(b.delai),
           tauxAvancement: taux,
           ...(responsableId ? { responsableId } : {}),
         };
-        if (actionId) {
+        if (actionId && actionAvant && actionAvant.id === actionId) {
+          await versionnerAction(tx, actionAvant, "PUT modification action", auteur, maintenant);
           await tx.veilleAction.update({
             where: { id: actionId },
             data: {
@@ -282,7 +351,7 @@ export async function PUT(
               modifiedByEmail: auteur.email,
             },
           });
-        } else {
+        } else if (libelleAction) {
           const creee = await tx.veilleAction.create({
             data: {
               ficheId: cible.ficheId,
@@ -292,34 +361,15 @@ export async function PUT(
             },
           });
           newActionId = creee.id;
+        } else if (actionId) {
+          const cibleSuppr = actionAvant && actionAvant.id === actionId ? actionAvant : null;
+          if (cibleSuppr) {
+            await versionnerAction(tx, cibleSuppr, "PUT suppression action", auteur, maintenant);
+          }
+          await tx.veilleAction.delete({ where: { id: actionId } });
+          newActionId = null;
         }
-      } else if (actionId) {
-        await tx.veilleAction.delete({ where: { id: actionId } });
-        newActionId = null;
       }
-      const apresFiche = {
-        departement,
-        statutConformite: statut,
-        preuveDifferee: chaine(b.preuveDifferee).trim() || null,
-        actionsExistantes: chaine(b.actionsExistantes).trim() || null,
-        preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
-      };
-      const reassignee = departement !== existant.departement;
-      await journaliser(tx, {
-        alerteId: cible.alerteId,
-        ficheId: cible.ficheId,
-        actionId: newActionId,
-        entite: "FICHE",
-        action: reassignee ? "REASSIGNATION" : juridique ? "MODIFICATION_FICHE" : "MODIFICATION_FICHE",
-        auteur,
-        details: reassignee
-          ? `Réassignée ${existant.departement} → ${departement} par ${auteur.bu}.`
-          : `Fiche ${existant.departement} modifiée par ${auteur.bu} (v${existant.version} → v${existant.version + 1}).`,
-        champsModifies: [
-          ...diffChamps(avantFiche, apresFiche),
-          ...(toucheTexte ? ["texteSource"] : []),
-        ],
-      });
       if (toucheTexte) {
         await journaliser(tx, {
           alerteId: cible.alerteId,
@@ -327,8 +377,34 @@ export async function PUT(
           entite: "ALERTE",
           action: "MODIFICATION_TEXTE",
           auteur,
-          details: `Texte ${numeroOrdre} modifié par le juridique.`,
-          champsModifies: ["numeroOrdre", "natureTexte", "referenceTexte"],
+          details: `Texte ${numeroOrdre} modifié par la centrale.`,
+          champsModifies: champsTexte,
+        });
+      }
+      if (reassignee) {
+        await journaliser(tx, {
+          alerteId: cible.alerteId,
+          ficheId: cible.ficheId,
+          entite: "FICHE",
+          action: "REASSIGNATION",
+          auteur,
+          details: `Réassignée ${existant.departement} → ${departement} par ${auteur.bu}.`,
+          champsModifies: ["departement"],
+        });
+      }
+      if (champsConf.length > 0 || actionAgit) {
+        await journaliser(tx, {
+          alerteId: cible.alerteId,
+          ficheId: cible.ficheId,
+          actionId: newActionId,
+          entite: "FICHE",
+          action: "MODIFICATION_FICHE",
+          auteur,
+          details: `Fiche ${existant.departement} modifiée par ${auteur.bu} (v${existant.version} → v${existant.version + 1}).`,
+          champsModifies: [
+            ...champsConf,
+            ...(actionAgit ? ["libelleAction", "tauxAvancement"] : []),
+          ],
         });
       }
     });
@@ -411,18 +487,18 @@ export async function PATCH(
       return NextResponse.json({ error: "Fiche introuvable." }, { status: 404 });
     }
 
-    // Matrice d'autorisation du PATCH.
-    const juridique = estJuridique(auteur.bu);
+    // Matrice stricte : centrale = flux (validation/renvoi), BU propriétaire = conformité.
+    const centrale = estCentrale(auteur.bu);
     const proprietaire = auteur.bu === fiche.departement;
-    if (!juridique && !proprietaire) {
+    if (!centrale && !proprietaire) {
       return NextResponse.json(
         { error: `Réservé aux membres ${fiche.departement} (vous êtes ${auteur.bu}).` },
         { status: 403 },
       );
     }
-    if (fluxStatut === "ATTENTE_APPROBATION_METIER" && !juridique) {
+    if (fluxStatut === "ATTENTE_APPROBATION_METIER" && !centrale) {
       return NextResponse.json(
-        { error: "Validation vers métier : réservée au juridique." },
+        { error: "Validation vers métier : réservée à la centrale (CENTRAL_VRG)." },
         { status: 403 },
       );
     }
@@ -442,16 +518,10 @@ export async function PATCH(
       b.actionsExistantes !== undefined ||
       b.preuvesExistantes !== undefined ||
       b.preuveFichierDonnees !== undefined;
-    if (toucheConformite && !proprietaire && !juridique) {
+    // Conformité (y compris pour la centrale) : BU propriétaire uniquement.
+    if (toucheConformite && !proprietaire) {
       return NextResponse.json(
-        { error: `Conformité : réservée aux membres ${fiche.departement}.` },
-        { status: 403 },
-      );
-    }
-    // Juridique : ne pilote pas la conformité BU (sauf validation de flux).
-    if (toucheConformite && juridique && !proprietaire && fluxStatut) {
-      return NextResponse.json(
-        { error: "Le juridique valide le flux ; la conformité est pilotée par la BU." },
+        { error: `Conformité : réservée aux membres ${fiche.departement} (la centrale pilote le flux, pas la conformité).` },
         { status: 403 },
       );
     }
@@ -647,13 +717,13 @@ export async function PATCH(
         auteur,
         details:
           actionJournal === "VALIDATION_JURIDIQUE"
-            ? `Validée vers ${fiche.departement} par le juridique.`
+            ? `Validée vers ${fiche.departement} par la centrale.`
             : actionJournal === "RENVOI_BU"
               ? `Rejet retraité et renvoyé vers ${fiche.departement}.`
               : actionJournal === "APPROBATION_BU"
                 ? `Approuvée par ${fiche.departement}${taux !== null ? ` à ${taux} %.` : "."}`
                 : actionJournal === "REJET_BU"
-                  ? `Assignation refusée par ${fiche.departement} (retour juridique).`
+                  ? `Assignation refusée par ${fiche.departement} (retour centrale).`
                   : `Fiche ${fiche.departement} pilotée par ${auteur.bu}.`,
         champsModifies: [
           ...diffChamps(avantFiche, apresFiche),

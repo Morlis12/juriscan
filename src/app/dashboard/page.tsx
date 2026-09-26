@@ -8,7 +8,7 @@ import {
   DEPARTEMENTS,
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
-import { estJuridique, messageAccesRefuse, peutModifierFiche, peutValiderVersMetier } from "@/domain/acces";
+import { estCentrale, messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import {
@@ -310,10 +310,10 @@ export default function DashboardPage() {
     () => toutesAlertes.filter((a) => a.fluxStatut === "REJETE_METIER").length,
     [toutesAlertes],
   );
-  /** Le juridique valide la fiche IA → bascule vers l'approbation métier. */
+  /** La centrale valide la fiche IA → bascule vers l'approbation métier. */
   async function validerVersMetier(id: string) {
     if (!peutValiderVersMetier(buConnectee)) {
-      setAvertissement("Validation vers métier : réservée au juridique (CENTRAL_VRG, DJ).");
+      setAvertissement("Validation vers métier : réservée à la centrale (CENTRAL_VRG).");
       return;
     }
     setDbAlertes((prev) =>
@@ -336,9 +336,9 @@ export default function DashboardPage() {
     }
   }
 
-  /** La BU pilote son taux d'avancement (tableau ou approbation), sans changer de flux. */
+  /** La BU propriétaire pilote son taux (strict — jamais une autre BU). */
   async function sauvegarderTaux(f: AlertePilotee, taux: number) {
-    if (!peutModifierFiche(buConnectee, f.departement)) {
+    if (!peutPiloterConformite(buConnectee, f.departement)) {
       setAvertissement(messageAccesRefuse(buConnectee, f.departement));
       return;
     }
@@ -607,7 +607,7 @@ export default function DashboardPage() {
             Connecté :{" "}
             <span className="font-semibold text-brand-blue">
               {buConnectee}
-              {estJuridique(buConnectee) ? " (juridique, accès global)" : " (cloisonné à vos assignations)"}
+              {estCentrale(buConnectee) ? " (centrale : pilote le flux, ne touche pas la conformité BU)" : " (cloisonnée à vos assignations)"}
             </span>
             {" — "}
             <Link href="/dashboard/historique" className="font-semibold text-brand-blue underline decoration-brand-gold decoration-2 underline-offset-2">
@@ -890,7 +890,8 @@ export default function DashboardPage() {
                             </p>
                             <ul className="grid gap-2 md:grid-cols-2">
                               {g.fiches.map((f) => {
-                                const modifiable = peutModifierFiche(buConnectee, f.departement);
+                                const modifiable = peutOuvrirFiche(buConnectee, f.departement);
+                                const pilote = peutPiloterConformite(buConnectee, f.departement);
                                 const validable = peutValiderVersMetier(buConnectee);
                                 return (
                                 <li
@@ -978,32 +979,32 @@ export default function DashboardPage() {
                                       ) : null}
                                     </div>
                                   </div>
-                                  {/* Taux piloté par la BU propriétaire (cloisons BU, tracé SCD2). */}
-                                  <label className="block" title={modifiable ? "Pilotez votre taux (BU propriétaire)" : messageAccesRefuse(buConnectee, f.departement)}>
+                                  {/* Taux piloté par la BU propriétaire (strict, tracé SCD2). */}
+                                  <label className="block" title={pilote ? "Pilotez votre taux (BU propriétaire)" : messageAccesRefuse(buConnectee, f.departement)}>
                                     <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-brand-blue">
                                       Taux d&apos;avancement (BU) — {f.tauxAvancement} %
-                                      {!modifiable && " 🔒"}
+                                      {!pilote && " 🔒"}
                                     </span>
                                     <input
                                       type="range"
                                       min={0}
                                       max={100}
                                       value={f.tauxAvancement}
-                                      disabled={!modifiable}
+                                      disabled={!pilote}
                                       onClick={(e) => e.stopPropagation()}
                                       onChange={(e) =>
-                                        modifiable &&
+                                        pilote &&
                                         setTauxCorriges((prev) => ({
                                           ...prev,
                                           [f.id]: Number(e.target.value),
                                         }))
                                       }
                                       onPointerUp={(e) =>
-                                        modifiable &&
+                                        pilote &&
                                         sauvegarderTaux(f, Number((e.target as HTMLInputElement).value))
                                       }
                                       onKeyUp={(e) =>
-                                        modifiable &&
+                                        pilote &&
                                         sauvegarderTaux(f, Number((e.target as HTMLInputElement).value))
                                       }
                                       className="w-full accent-[#1C3359] disabled:cursor-not-allowed disabled:opacity-40"

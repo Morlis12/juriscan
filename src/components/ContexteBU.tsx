@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { DEPARTEMENTS, type DepartementCode } from "@/domain/veille";
-import { CLE_BU_CONNECTEE, CLE_EMAIL_CONNECTE, estJuridique } from "@/domain/acces";
+import { CLE_BU_CONNECTEE, CLE_EMAIL_CONNECTE, estCentrale } from "@/domain/acces";
 
 /**
  * JuriScan AI — BU connectée (prototype localStorage).
@@ -85,7 +85,7 @@ export function useBuConnectee() {
     }
   }, []);
 
-  return { bu, email, changerBU, changerEmail, pret, estJuridique: estJuridique(bu) };
+  return { bu, email, changerBU, changerEmail, pret, estCentrale: estCentrale(bu) };
 }
 
 /** En-têtes d'auteur envoyés à l'API (pont prototype → JWT Entra ID). */
@@ -103,7 +103,7 @@ export function SelecteurBUConnectee({ compact = false }: { compact?: boolean })
       className={`flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium ${
         compact ? "" : ""
       }`}
-      title="Simulation de connexion : seule votre BU peut modifier ses assignations (le juridique garde un accès global). Remplacé par Entra ID côté Microsoft."
+      title="Cloisonnement strict : votre BU ne modifie que ses assignations. Seule la centrale (CENTRAL_VRG) pilote le flux. Remplacé par Entra ID côté Microsoft."
     >
       <span className="text-slate-300">Connecté :</span>
       <select
@@ -115,13 +115,13 @@ export function SelecteurBUConnectee({ compact = false }: { compact?: boolean })
         {(Object.keys(DEPARTEMENTS) as DepartementCode[]).map((code) => (
           <option key={code} value={code}>
             {code}
-            {estJuridique(code) ? " (juridique)" : ""}
+            {estCentrale(code) ? " (centrale)" : ""}
           </option>
         ))}
       </select>
       <span
-        className={`h-2 w-2 rounded-full ${estJuridique(bu) ? "bg-brand-gold" : "bg-emerald-400"}`}
-        title={estJuridique(bu) ? "Juridique : accès global" : "BU métier : cloisonnée à ses assignations"}
+        className={`h-2 w-2 rounded-full ${estCentrale(bu) ? "bg-brand-gold" : "bg-emerald-400"}`}
+        title={estCentrale(bu) ? "Centrale : pilote le flux transverse" : "BU : cloisonnée à ses assignations"}
       />
     </label>
   );

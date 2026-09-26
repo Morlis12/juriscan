@@ -8,7 +8,7 @@ import type {
   FluxStatut,
 } from "@/domain/veille";
 import { CONFORMITE_POURCENTAGE, DEPARTEMENTS } from "@/domain/veille";
-import { estJuridique, peutGererRejet, peutModifierFiche } from "@/domain/acces";
+import { estCentrale, peutGererRejet } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
@@ -58,9 +58,9 @@ export default function RejetsPage() {
   const [filtreBU, setFiltreBU] = useState<"ALL" | DepartementCode>("ALL");
   const [message, setMessage] = useState<string | null>(null);
   const [traitement, setTraitement] = useState(false);
-  // Retraitement réservé au juridique ; les BU voient leurs rejets en lecture.
+  // Retraitement réservé à la centrale ; les BU voient leurs rejets en lecture.
   const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
-  const juridique = estJuridique(buConnectee);
+  const centrale = estCentrale(buConnectee);
 
   useEffect(() => {
     let actif = true;
@@ -123,7 +123,7 @@ export default function RejetsPage() {
   /** Retraite le rejet : renvoie la fiche vers la BU (attente d'approbation). */
   async function renvoyerVersBU(f: FicheRejet) {
     if (!peutGererRejet(buConnectee)) {
-      setMessage("🔒 Renvoi vers la BU : réservé au juridique (CENTRAL_VRG, DJ).");
+      setMessage("🔒 Renvoi vers la BU : réservé à la centrale (CENTRAL_VRG).");
       return;
     }
     setTraitement(true);
@@ -143,7 +143,7 @@ export default function RejetsPage() {
       });
       if (!reponse.ok) {
         const payload = (await reponse.json().catch(() => null)) as { error?: string } | null;
-        setMessage(payload?.error ?? "Renvoi refusé (réservé au juridique).");
+        setMessage(payload?.error ?? "Renvoi refusé (réservé à la centrale).");
         return;
       }
     } catch {
@@ -202,8 +202,8 @@ export default function RejetsPage() {
               </h2>
               <p className="mt-1 text-xs text-slate-500">
                 {rejets.length} rejet{rejets.length > 1 ? "s" : ""} à retraiter
-                {filtreBU !== "ALL" ? ` · BU : ${filtreBU}` : ""}. Retraitement réservé au
-                juridique — connecté : <span className="font-semibold">{buConnectee}</span>.
+                {filtreBU !== "ALL" ? ` · BU : ${filtreBU}` : ""}. Retraitement réservé à la
+                centrale — connecté : <span className="font-semibold">{buConnectee}</span>.
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -266,7 +266,7 @@ export default function RejetsPage() {
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {peutModifierFiche(buConnectee, f.departement) && juridique ? (
+                    {centrale ? (
                       <Link
                         href={`/dashboard/alertes/${f.id}`}
                         className="rounded-lg border border-brand-blue px-4 py-2 text-xs font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
@@ -275,13 +275,13 @@ export default function RejetsPage() {
                       </Link>
                     ) : (
                       <span
-                        title="Retraitement : réservé au juridique"
+                        title="Retraitement : réservé à la centrale"
                         className="cursor-not-allowed rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-400"
                       >
                         🔒 Modifier / réassigner
                       </span>
                     )}
-                    {juridique ? (
+                    {centrale ? (
                       <button
                         type="button"
                         onClick={() => renvoyerVersBU(f)}
@@ -292,7 +292,7 @@ export default function RejetsPage() {
                       </button>
                     ) : (
                       <span className="rounded-lg bg-slate-50 px-4 py-2 text-xs font-medium text-slate-500">
-                        🔒 Renvoi réservé au juridique
+                        🔒 Renvoi réservé à la centrale
                       </span>
                     )}
                   </div>

@@ -12,15 +12,15 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { creerFicheVeille } from "@/lib/veille-save";
 import { fusionnerAuteur, lireAuteur, lireAuteurDepuisCorps } from "@/lib/acces";
-import { estJuridique } from "@/domain/acces";
+import { estCentrale } from "@/domain/acces";
 
 export async function POST(req: Request) {
   try {
     const corps = await req.json();
     const auteur = fusionnerAuteur(lireAuteur(req), lireAuteurDepuisCorps(corps));
-    if (!auteur.bu || !estJuridique(auteur.bu)) {
+    if (!auteur.bu || !estCentrale(auteur.bu)) {
       return NextResponse.json(
-        { error: "Création / assignation : réservée au juridique (CENTRAL_VRG, DJ)." },
+        { error: "Création / assignation : réservée à la centrale (CENTRAL_VRG)." },
         { status: 403 },
       );
     }

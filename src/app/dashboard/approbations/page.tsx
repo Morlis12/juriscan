@@ -415,7 +415,7 @@ export default function ApprobationsPage() {
           {enAttente.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-slate-400">
               Aucune fiche en attente d&apos;approbation pour {bu}. Les fiches
-              validées par le juridique apparaîtront ici.
+                validées par la centrale apparaîtront ici.
             </p>
           ) : (
             <ul className="divide-y divide-slate-100">
@@ -469,7 +469,7 @@ export default function ApprobationsPage() {
                       {/* Texte assigné — déjà rempli, lecture seule */}
                       <fieldset className="grid gap-3 rounded-xl border border-slate-200 bg-white p-3">
                         <legend className="bg-white px-2 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                          Texte assigné par le juridique (lecture seule)
+                          Texte assigné par la centrale (lecture seule)
                         </legend>
                         <div className="grid gap-3 sm:grid-cols-2">
                           <Lecture label="N° d'ordre" valeur={f.numeroOrdre} mono />

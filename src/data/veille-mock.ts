@@ -115,6 +115,97 @@ export const MOCK_ALERTES: MockAlerte[] = ROWS.map((row, i) => ({
   tauxAvancement: row[6],
 }));
 
+/**
+ * Textes multi-BU : un même texte assigné à 2 ou 3 BU (une fiche par BU).
+ * Le pilotage regroupe par `numeroOrdre` : le tableau affiche « 2 BU » /
+ * « 3 BU » et la barre « Niveau de conformité par texte » moyenne les taux.
+ */
+interface GroupeMultiBU {
+  numeroOrdre: string;
+  natureTexte: string;
+  referenceTexte: string;
+  resumeTexte: string;
+  dateEntreeVigueur: string;
+  fiches: { departement: DepartementCode; statut: ConformiteStatut; tauxAvancement: number }[];
+}
+
+const GROUPES_MULTI_BU: GroupeMultiBU[] = [
+  {
+    numeroOrdre: "AGL-2026-031",
+    natureTexte: "Loi",
+    referenceTexte: "Loi n°2024-880 sur la protection des données personnelles (ARTCI)",
+    resumeTexte: "Registre des traitements, DPO désigné et durées de conservation : chantier transverse DJ (clauses), DRH (données RH) et DAF (données clients et fournisseurs).",
+    dateEntreeVigueur: "2024-06-01",
+    fiches: [
+      { departement: "DJ", statut: "PARTIELLEMENT_50", tauxAvancement: 52 },
+      { departement: "DRH", statut: "PARTIELLEMENT_75", tauxAvancement: 70 },
+      { departement: "DAF", statut: "PARTIELLEMENT_25", tauxAvancement: 30 },
+    ],
+  },
+  {
+    numeroOrdre: "AGL-2026-032",
+    natureTexte: "Décret",
+    referenceTexte: "Décret n°2025-120 portant hygiène, sécurité et conditions de travail",
+    resumeTexte: "Document unique d'évaluation des risques et plan de prévention : DRH (organisation du travail) et DQHSE (sécurité des sites).",
+    dateEntreeVigueur: "2025-02-01",
+    fiches: [
+      { departement: "DRH", statut: "PARTIELLEMENT_50", tauxAvancement: 55 },
+      { departement: "DQHSE", statut: "PARTIELLEMENT_25", tauxAvancement: 28 },
+    ],
+  },
+  {
+    numeroOrdre: "AGL-2026-033",
+    natureTexte: "Loi",
+    referenceTexte: "Loi de finances n°2026-005 pour l'année 2026",
+    resumeTexte: "Nouveaux taux, acomptes et obligations déclaratives : DAF (paramétrage comptable), PATR_IMMO (fiscalité foncière des sites) et DILS (droits de douane).",
+    dateEntreeVigueur: "2026-01-05",
+    fiches: [
+      { departement: "DAF", statut: "PARTIELLEMENT_75", tauxAvancement: 72 },
+      { departement: "PATR_IMMO", statut: "PARTIELLEMENT_50", tauxAvancement: 48 },
+      { departement: "DILS", statut: "PARTIELLEMENT_25", tauxAvancement: 25 },
+    ],
+  },
+  {
+    numeroOrdre: "AGL-2026-034",
+    natureTexte: "Arrêté",
+    referenceTexte: "Arrêté n°077/PAA sur la sûreté portuaire des terminaux",
+    resumeTexte: "Clôtures, contrôles d'accès et exercices ISPS : DILS (exploitation des terminaux) et DQHSE (certification et audits).",
+    dateEntreeVigueur: "2025-08-15",
+    fiches: [
+      { departement: "DILS", statut: "PARTIELLEMENT_75", tauxAvancement: 78 },
+      { departement: "DQHSE", statut: "CONFORME_100", tauxAvancement: 100 },
+    ],
+  },
+  {
+    numeroOrdre: "AGL-2026-035",
+    natureTexte: "Décret",
+    referenceTexte: "Décret n°2024-018 portant Code des marchés publics",
+    resumeTexte: "Seuils de passation et dématérialisation des appels d'offres : DJ (montages contractuels) et DAF (exécution budgétaire).",
+    dateEntreeVigueur: "2024-03-15",
+    fiches: [
+      { departement: "DJ", statut: "CONFORME_100", tauxAvancement: 100 },
+      { departement: "DAF", statut: "PARTIELLEMENT_75", tauxAvancement: 74 },
+    ],
+  },
+];
+
+for (let gi = 0; gi < GROUPES_MULTI_BU.length; gi += 1) {
+  const g = GROUPES_MULTI_BU[gi];
+  g.fiches.forEach((f, fi) => {
+    MOCK_ALERTES.push({
+      id: `mock-multi-${gi + 1}-${fi + 1}`,
+      numeroOrdre: g.numeroOrdre,
+      departement: f.departement,
+      natureTexte: g.natureTexte,
+      referenceTexte: g.referenceTexte,
+      resumeTexte: g.resumeTexte,
+      dateEntreeVigueur: g.dateEntreeVigueur,
+      statut: f.statut,
+      tauxAvancement: f.tauxAvancement,
+    });
+  });
+}
+
 /** Une action d'amélioration par alerte non conforme / partielle. */
 export const MOCK_ACTIONS: MockAction[] = MOCK_ALERTES.filter(
   (a) => a.statut !== "CONFORME_100",

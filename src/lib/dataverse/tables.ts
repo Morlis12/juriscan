@@ -12,10 +12,11 @@
  * - Multi-BU : un texte peut concerner plusieurs BU → une `VeilleFiche` par BU
  *   cochée (cases à cocher de l'écran nouvelle-alerte) ; le pilotage regroupe
  *   par `numeroOrdre` et affiche la conformité de chaque BU.
- * - Cloisonnement BU : 1 Business Unit + 1 Team par BU ; Security Role
- *   « JuriScan BU » (lecture globale, écriture si `departement` == équipe),
- *   « JuriScan Juridique » (écriture globale + assignation). Voir
- *   `src/domain/acces.ts` (matrice prototype → rôles Dataverse).
+ * - Cloisonnement BU strict : 1 Business Unit + 1 Team par BU ; Security Role
+ *   « JuriScan BU » (lecture globale, écriture si `departement` == équipe —
+ *   DJ incluse, sans exception), « JuriScan Centrale » (CENTRAL_VRG :
+ *   création, assignation, transitions de flux, réassignation ; écriture
+ *   bloquée sur les champs conformité BU). Voir `src/domain/acces.ts`.
  * - Traçabilité SCD2 : activer l'Auditing natif + recréer `VeilleJournal`
  *   (lecture Power Pages `/dashboard/historique`) et les tables `*Version`
  *   (colonnes validFrom/validTo/isCurrent/version). Voir

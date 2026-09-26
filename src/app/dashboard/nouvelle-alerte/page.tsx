@@ -10,7 +10,7 @@ import {
   creerAlerteVierge,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
-import { estJuridique, peutCreerAlerte } from "@/domain/acces";
+import { peutCreerAlerte } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 
@@ -197,7 +197,7 @@ export default function NouvelleAlertePage() {
   async function enregistrerFiche() {
     if (!resultat) return;
     if (!peutCreerAlerte(buConnectee)) {
-      setErreur(`Création / assignation : réservée au juridique (vous êtes ${buConnectee}). Basculez la BU connectée en haut.`);
+      setErreur(`Création / assignation : réservée à la centrale (vous êtes ${buConnectee}). Basculez la BU connectée en haut vers CENTRAL_VRG.`);
       return;
     }
     if (resultat.departementsResponsables.length === 0) {
@@ -600,9 +600,9 @@ export default function NouvelleAlertePage() {
                 </button>
               </div>
 
-              {!estJuridique(buConnectee) && (
+              {!peutCreerAlerte(buConnectee) && (
                 <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-                  🔒 Assignation réservée au juridique — vous êtes connecté en {buConnectee}. Basculez la BU en haut vers CENTRAL_VRG / DJ pour enregistrer.
+                  🔒 Assignation réservée à la centrale — vous êtes connecté en {buConnectee}. Basculez la BU en haut vers CENTRAL_VRG pour enregistrer.
                 </p>
               )}
 
@@ -610,7 +610,7 @@ export default function NouvelleAlertePage() {
                 type="button"
                 onClick={enregistrerFiche}
                 disabled={saving}
-                title={estJuridique(buConnectee) ? "Assigner aux BU (tracé SCD2)" : "Réservé au juridique"}
+                title={peutCreerAlerte(buConnectee) ? "Assigner aux BU (tracé SCD2)" : "Réservé à la centrale"}
                 className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Enregistrement en cours…" : "💾 Enregistrer la Fiche de Veille"}
