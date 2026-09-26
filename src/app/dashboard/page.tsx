@@ -716,8 +716,10 @@ export default function DashboardPage() {
             Niveau de conformité par texte
           </h2>
           <p className="mt-1 text-xs text-slate-500">
-            Taux moyen des BU assignées à chaque texte — cliquez une barre pour
-            voir le détail par BU dans le tableau ci-dessous.
+            Taux moyen des BU assignées à chaque texte — pour les textes
+            multi-BU, le pourcentage de <span className="font-semibold">chaque BU</span> est
+            détaillé sous la moyenne. Cliquez une barre pour voir le détail par BU
+            dans le tableau ci-dessous.
           </p>
           {groupes.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400">
@@ -732,7 +734,7 @@ export default function DashboardPage() {
                     <button
                       type="button"
                       onClick={() => setTexteOuvert(actif ? null : g.numeroOrdre)}
-                      title={`${g.referenceTexte} — voir le détail par BU`}
+                      title={`${g.referenceTexte} — ${g.fiches.map((f) => `${f.departement} : ${f.tauxAvancement} %`).join(", ")} — voir le détail par BU`}
                       className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
                         actif
                           ? "border-brand-gold bg-brand-gold/10"
@@ -746,11 +748,11 @@ export default function DashboardPage() {
                             className="ml-2 truncate font-sans font-medium text-slate-500"
                             title={`BU concernées : ${g.fiches.map((f) => f.departement).join(", ")}`}
                           >
-                            {g.referenceTexte} · BU : {g.fiches.map((f) => f.departement).join(", ")}
+                            {g.referenceTexte} · {g.fiches.length} BU : {g.fiches.map((f) => f.departement).join(", ")}
                           </span>
                         </span>
                         <span className="shrink-0 font-bold tabular-nums text-brand-blue">
-                          {g.tauxMoyen} %
+                          ⌀ {g.tauxMoyen} %
                         </span>
                       </span>
                       <span className="mt-1.5 block h-2.5 overflow-hidden rounded-full bg-slate-200">
@@ -759,6 +761,27 @@ export default function DashboardPage() {
                           style={{ width: `${g.tauxMoyen}%` }}
                         />
                       </span>
+                      {/* Texte multi-BU : le pourcentage de chaque BU sous la moyenne. */}
+                      {g.fiches.length > 1 && (
+                        <span className="mt-2 block space-y-1 border-t border-slate-200/70 pt-2">
+                          {g.fiches.map((f) => (
+                            <span key={f.id} className="flex items-center gap-2">
+                              <span className="w-28 shrink-0 truncate text-[11px] font-bold text-brand-blue">
+                                {f.departement}
+                              </span>
+                              <span className="h-2 flex-1 overflow-hidden rounded-full bg-slate-200">
+                                <span
+                                  className={`block h-full rounded-full ${couleurNiveau(f.tauxAvancement)}`}
+                                  style={{ width: `${f.tauxAvancement}%` }}
+                                />
+                              </span>
+                              <span className="w-14 shrink-0 text-right text-[11px] font-bold tabular-nums text-slate-700">
+                                {f.tauxAvancement} %
+                              </span>
+                            </span>
+                          ))}
+                        </span>
+                      )}
                     </button>
                   </li>
                 );
