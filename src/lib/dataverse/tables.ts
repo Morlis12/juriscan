@@ -21,6 +21,10 @@
  *   (lecture Power Pages `/dashboard/historique`) et les tables `*Version`
  *   (colonnes validFrom/validTo/isCurrent/version). Voir
  *   `src/domain/historique.ts` et `src/lib/historique.ts`.
+ * - Jalons de dates (sans colonne ajoutée) : `createdon` (= assignation à la
+ *   BU), `modifiedon` (= dernière modification = état affiché dans le suivi),
+ *   `VeilleJournal` (VALIDATION_JURIDIQUE / RENVOI_BU = début d'attente,
+ *   REJET_BU = date du rejet, APPROBATION_BU). Voir `src/domain/jalons.ts`.
  */
 
 export interface DataverseField {

@@ -9,6 +9,8 @@ import {
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
 import { estCentrale, messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
+import { formaterDateFR } from "@/domain/jalons";
+import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import {
@@ -26,6 +28,10 @@ interface ApiFiche {
   departement: DepartementCode;
   statutConformite: ConformiteStatut;
   fluxStatut?: FluxStatut;
+  /** Date d'assignation à la BU (= création de la fiche). */
+  createdAt: string;
+  /** Dernière modification (= état affiché dans le suivi). */
+  updatedAt: string;
   preuveDifferee?: string | null;
   preuveFichierNom?: string | null;
   preuveFichierMime?: string | null;
@@ -53,6 +59,8 @@ interface ApiAlerte {
 type AlertePilotee = MockAlerte & {
   fluxStatut: FluxStatut;
   propositionBU?: string | null;
+  /** Dernière modification = date de l'état affiché (SQL : updatedAt ; démo : journal). */
+  derniereModif: string;
   /** Preuve différée pilotée par la BU (jamais renseignée à l'assignation). */
   preuveDifferee?: string | null;
   /** Document de preuve joint (téléchargeable). */
@@ -200,6 +208,7 @@ export default function DashboardPage() {
                 : CONFORMITE_POURCENTAGE[f.statutConformite],
               fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
               propositionBU: a.propositionBU ?? null,
+              derniereModif: (f.updatedAt ?? a.createdAt).slice(0, 10),
               preuveDifferee: f.preuveDifferee ?? null,
               preuveFichierNom: f.preuveFichierNom ?? null,
               preuveFichierMime: f.preuveFichierMime ?? null,
@@ -249,6 +258,7 @@ export default function DashboardPage() {
         ...m,
         fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
         propositionBU: m.departement,
+        derniereModif: jalonsDemoPourFiche(m.id).derniereModif ?? m.dateEntreeVigueur,
         preuveDifferee: null as string | null,
         preuveFichierNom: null as string | null,
         preuveFichierMime: null as string | null,
@@ -368,6 +378,8 @@ export default function DashboardPage() {
     dateEntreeVigueur: string;
     fiches: AlertePilotee[];
     tauxMoyen: number;
+    /** Dernière modification du texte = plus récente des fiches (état affiché). */
+    derniereModif: string;
     /** Fiches par statut du workflow — visibilité du suivi dans le tableau. */
     flux: Record<FluxStatut, number>;
   }
@@ -393,6 +405,7 @@ export default function DashboardPage() {
           dateEntreeVigueur: a.dateEntreeVigueur,
           fiches: [a],
           tauxMoyen: 0,
+          derniereModif: "",
           flux: { ...fluxVide(), [a.fluxStatut]: 1 },
         });
       }
@@ -402,6 +415,10 @@ export default function DashboardPage() {
       g.tauxMoyen = Math.round(
         g.fiches.reduce((somme, f) => somme + f.tauxAvancement, 0) / g.fiches.length,
       );
+      g.derniereModif = g.fiches
+        .map((f) => f.derniereModif.slice(0, 10))
+        .sort()
+        .at(-1) ?? "";
     }
     return liste.sort((x, y) => x.numeroOrdre.localeCompare(y.numeroOrdre));
   }, [alertes]);
@@ -816,6 +833,9 @@ export default function DashboardPage() {
                   <th className="px-4 py-3">Date d&apos;entrée en vigueur</th>
                   <th className="px-4 py-3">BU concernées</th>
                   <th className="px-4 py-3">Taux moyen</th>
+                  <th className="px-4 py-3" title="Date de l'état affiché aujourd'hui (dernière modification des fiches)">
+                    Dernière modif
+                  </th>
                   <th className="px-4 py-3">Conformité par BU</th>
                   <th className="px-4 py-3">Workflow</th>
                 </tr>
@@ -869,6 +889,12 @@ export default function DashboardPage() {
                             </span>
                           </div>
                         </td>
+                        <td
+                          className="whitespace-nowrap px-4 py-3 text-xs tabular-nums text-slate-700"
+                          title="Date de l'état affiché aujourd'hui (dernière modification des fiches du texte)"
+                        >
+                          {formaterDateFR(g.derniereModif)}
+                        </td>
                         <td className="px-4 py-3">
                           <span className="flex flex-wrap gap-1">
                             {g.fiches.map((f) => (
@@ -907,7 +933,7 @@ export default function DashboardPage() {
                       </tr>
                       {ouvert && (
                         <tr className="bg-slate-50/70">
-                          <td colSpan={8} className="px-4 py-3">
+                          <td colSpan={9} className="px-4 py-3">
                             <p className="mb-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
                               Niveaux de conformité par BU — {g.numeroOrdre}
                             </p>
@@ -948,6 +974,12 @@ export default function DashboardPage() {
                                           Preuve différée : {f.preuveDifferee}
                                         </p>
                                       )}
+                                      <p
+                                        className="mt-1 text-[11px] tabular-nums text-slate-500"
+                                        title="Date de l'état affiché aujourd'hui (dernière modification de la fiche)"
+                                      >
+                                        Dernière modif : {formaterDateFR(f.derniereModif)}
+                                      </p>
                                       {f.preuveFichierNom && f.preuveFichierDonnees && (
                                         <p className="mt-1">
                                           <a
@@ -1046,7 +1078,7 @@ export default function DashboardPage() {
                 {groupes.length === 0 && (
                   <tr>
                     <td
-                      colSpan={8}
+                      colSpan={9}
                       className="px-4 py-8 text-center text-sm text-slate-400"
                     >
                       Aucun texte sur ce périmètre. Ajustez les filtres BU / Date / Type / Workflow.

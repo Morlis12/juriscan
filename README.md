@@ -27,6 +27,9 @@ voir `src/lib/dataverse/tables.ts`).
 - **Traçabilité SCD type 2** : versions figées (`Veille*Version`) + journal
   lisible (`VeilleJournal`), consultable dans `/dashboard/historique` et sur
   chaque fiche. Voir § Historique.
+- **Jalons de dates** : rejets (assignation + rejet), approbations (assignation +
+  ancienneté « en attente depuis N jours »), suivi (colonne « Dernière modif » =
+  date de l'état affiché). Voir § Jalons.
 - **Données démo visibles** : 30 fiches + 5 textes multi-BU (2–3 BU : `AGL-2026-031`
   à `035`) et historique simulé aligné sur le workflow (badges **démo**/**SQL**).
 - **Identité AGL** : logo officiel (`public/logo-agl.png`, fond `#1C3359` —
@@ -90,11 +93,12 @@ src/
     PreuveFichierInput.tsx      # pièce jointe preuve (PDF/image ≤ 8 Mo, base64)
   data/
     veille-mock.ts              # 30 fiches + 5 textes multi-BU (AGL-2026-031 à 035)
-    historique-demo.ts          # journal simulé déterministe (aligné FLUX_DEMO)
+    historique-demo.ts          # journal simulé déterministe + jalonsDemoPourFiche
   domain/                       # pur, sans Next.js/Prisma — référence portable Dataverse
     veille.ts                   # types, statuts, workflow, BU
     acces.ts                    # MATRICE D'ACCÈS (centrale vs BU — DJ cloisonnée)
     historique.ts               # entités/actions tracées SCD2, type JournalEntree
+    jalons.ts                   # JALONS DE DATES (formatage, ancienneté, début d'attente)
     nouvelle-alerte.ts          # 21 colonnes, formulaire vierge
   lib/                          # serveur (Prisma)
     prisma.ts                   # singleton Prisma
@@ -145,6 +149,28 @@ avant/après et ne versionne que les groupes autorisés et réellement touchés.
   `?fiche=` pour une fiche), section « Historique » de chaque fiche,
   `GET /api/historique` et `GET /api/veille/[id]/historique`.
 
+## Jalons de dates
+
+Aucune colonne ajoutée — réutilisation du modèle SCD2 (tables concernées :
+`VeilleFiche`, `VeilleJournal`) :
+
+| Jalon affiché | Source SQL | Source démo |
+|---|---|---|
+| Assignation à la BU | `VeilleFiche.createdAt` | journal `CREATION` |
+| Validation vers métier / renvoi (= début d'attente) | journal `VALIDATION_JURIDIQUE` / `RENVOI_BU` (le plus récent) | simulé |
+| Rejet | journal `REJET_BU` (dernier) | simulé |
+| Approbation | journal `APPROBATION_BU` (dernier) | simulé |
+| Dernière modif (= état affiché) | `VeilleFiche.updatedAt` | dernière entrée du journal de la fiche |
+
+- `GET /api/veille` joint ces jalons à chaque fiche (`jalons : { valideeLe,
+  renvoyeeLe, rejeteeLe, approuveeLe }`, une seule requête journal).
+- Rejets : « Assignée le … · Rejetée le … (il y a N jours) ».
+- Approbations : « Assignée le … · ⏳ En attente depuis N jours (depuis le …) ».
+- Suivi des textes : colonne « Dernière modif » par texte (plus récente des
+  fiches) + date par BU dans le détail déplié.
+- Référence : `src/domain/jalons.ts` (`JalonsFiche`, `formaterDateFR`,
+  `dureeDepuis`, `debutAttente`), `jalonsDemoPourFiche` côté démo.
+
 ## Migration Microsoft (Power Pages / Dataverse)
 
 - Recréer les **7 tables** + 3 OptionSets (`DepartementCode`,
@@ -159,6 +185,8 @@ avant/après et ne versionne que les groupes autorisés et réellement touchés.
 - Authentification : remplacer le sélecteur prototype par l'utilisateur
   **Entra ID** (Web Roles → BU) ; `src/lib/acces.ts` (`lireAuteur`) est le seul
   point à basculer (en-têtes `x-bu-connectee`/`x-user-email` → JWT).
+- Dates : `createdon` (= assignation), `modifiedon` (= dernière modif),
+  `VeilleJournal` (validation / renvoi / rejet / approbation) — voir § Jalons.
 - Logo : téléverser `public/logo-agl.png` comme « Site Logo » du portail
   (Content Snippet `Site Logo Url`) ; en-têtes portail en `#1C3359` plein pour
   la fusion (voir `src/components/LogoAGL.tsx`).

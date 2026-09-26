@@ -14,6 +14,8 @@ import {
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
 import { messageAccesRefuse, peutStatuerAssignation } from "@/domain/acces";
+import { debutAttente, dureeDepuis, formaterDateFR } from "@/domain/jalons";
+import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
@@ -36,6 +38,15 @@ interface ApiFiche {
   preuveFichierNom?: string | null;
   preuveFichierMime?: string | null;
   preuveFichierDonnees?: string | null;
+  /** Date d'assignation à la BU (= création de la fiche). */
+  createdAt: string;
+  /** Jalons workflow (dernières dates du journal SCD2). */
+  jalons?: {
+    valideeLe: string | null;
+    renvoyeeLe: string | null;
+    rejeteeLe: string | null;
+    approuveeLe: string | null;
+  } | null;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
@@ -63,6 +74,10 @@ interface ApiAlerte {
 interface FicheApprobation extends MockAlerte {
   fluxStatut: FluxStatut;
   actionId: string | null;
+  /** Date d'assignation (SQL : fiche.createdAt ; démo : journal CREATION). */
+  assigneeLe: string | null;
+  /** Début de l'attente (validation/renvoi, sinon assignation) — ancienneté affichée. */
+  attenteDepuis: string | null;
   // Texte assigné (lecture seule — déjà rempli à l'assignation).
   article: string;
   libelleApplicable: string;
@@ -125,6 +140,7 @@ export default function ApprobationsPage() {
         for (const a of payload.data) {
           for (const f of a.fichesDepartements) {
             const action = f.actionsAmelioration[0];
+            const assigneeLe = f.createdAt ?? null;
             rows.push({
               id: `db-${a.id}-${f.id}`,
               numeroOrdre: a.numeroOrdre,
@@ -139,6 +155,11 @@ export default function ApprobationsPage() {
                 : CONFORMITE_POURCENTAGE[f.statutConformite],
               fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
               actionId: action?.id ?? null,
+              assigneeLe,
+              attenteDepuis: debutAttente(
+                { valideeLe: f.jalons?.valideeLe ?? null, renvoyeeLe: f.jalons?.renvoyeeLe ?? null },
+                assigneeLe,
+              ),
               article: a.article ?? "",
               libelleApplicable: a.libelleApplicable ?? "",
               moyenCommunication: a.moyenCommunication ?? "",
@@ -169,24 +190,29 @@ export default function ApprobationsPage() {
   // Socle démo : mocks positionnés en attente d'approbation (sans DB).
   const fichesDemo = useMemo<FicheApprobation[]>(
     () =>
-      MOCK_ALERTES.map((m, i) => ({
-        ...m,
-        fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
-        actionId: null,
-        article: "",
-        libelleApplicable: "",
-        moyenCommunication: "",
-        qssfte: "",
-        actionsExistantes: "",
-        preuvesExistantes: "",
-        preuveFichierNom: "",
-        preuveFichierMime: "",
-        preuveFichierDonnees: "",
-        libelleAction: "",
-        responsable: "",
-        delai: "",
-        preuveDifferee: "",
-      })),
+      MOCK_ALERTES.map((m, i) => {
+        const jalons = jalonsDemoPourFiche(m.id);
+        return {
+          ...m,
+          fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
+          actionId: null,
+          assigneeLe: jalons.assigneeLe,
+          attenteDepuis: debutAttente(jalons, jalons.assigneeLe),
+          article: "",
+          libelleApplicable: "",
+          moyenCommunication: "",
+          qssfte: "",
+          actionsExistantes: "",
+          preuvesExistantes: "",
+          preuveFichierNom: "",
+          preuveFichierMime: "",
+          preuveFichierDonnees: "",
+          libelleAction: "",
+          responsable: "",
+          delai: "",
+          preuveDifferee: "",
+        };
+      }),
     [],
   );
 
@@ -434,6 +460,21 @@ export default function ApprobationsPage() {
                       </p>
                       <p className="mt-1 text-xs tabular-nums text-slate-500">
                         Entrée en vigueur : {f.dateEntreeVigueur}
+                      </p>
+                      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                        <span>
+                          Assignée le{" "}
+                          <span className="font-semibold text-slate-700">
+                            {formaterDateFR(f.assigneeLe)}
+                          </span>
+                        </span>
+                        <span title="Ancienneté de l'attente d'approbation (depuis validation/renvoi, sinon assignation)">
+                          ⏳ En attente depuis{" "}
+                          <span className="font-bold text-amber-700">
+                            {f.attenteDepuis ? (dureeDepuis(f.attenteDepuis) ?? "—") : "—"}
+                          </span>
+                          {f.attenteDepuis && ` (depuis le ${formaterDateFR(f.attenteDepuis)})`}
+                        </span>
                       </p>
                       <p className="mt-1 text-xs font-bold tabular-nums text-brand-blue">
                         Statut de conformité : {STATUTS_CONFORMITE.find((s) => s.code === f.statut)?.label ?? f.statut} · {f.tauxAvancement} %

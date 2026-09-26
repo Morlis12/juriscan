@@ -96,14 +96,20 @@ model VeilleFiche {
   // --- SCD Type 2 : seule la ligne isCurrent est affichée / modifiée.
   // Chaque modification fige l'ancienne image dans VeilleFicheVersion puis
   // incrémente version (Dataverse : colonnes validFrom/validTo/isCurrent).
+  // Jalons de dates (aucune colonne ajoutée — réutilisation) :
+  // - date d'assignation à la BU = createdAt (création = assignation) ;
+  // - dernière modification (= état affiché dans le suivi) = updatedAt ;
+  // - validation / renvoi / rejet / approbation = dernières entrées
+  //   VeilleJournal (VALIDATION_JURIDIQUE, RENVOI_BU, REJET_BU,
+  //   APPROBATION_BU), exposées par GET /api/veille (`jalons` par fiche).
   version         Int             @default(1)
   validFrom       DateTime        @default(now())
   validTo         DateTime?
   isCurrent       Boolean         @default(true)
   modifiedByBU    DepartementCode?
   modifiedByEmail String?
-  createdAt       DateTime        @default(now())
-  updatedAt       DateTime        @updatedAt
+  createdAt       DateTime        @default(now()) // Date d'assignation à la BU
+  updatedAt       DateTime        @updatedAt // Dernière modification (= état affiché)
 
   // Relations
   alerte              VeilleAlerte   @relation(fields: [alerteId], references: [id], onDelete: Cascade)
@@ -185,6 +191,10 @@ model VeilleActionVersion {
 // 7. JOURNAL CONSULTABLE (qui / quoi / quand / par qui).
 // Dataverse : table personnalisée VeilleJournal (lecture Power Pages) +
 // Auditing natif en complément ; `champsModifies` = JSON des champs touchés.
+// Jalons exposés : CREATION (= assignation, avec VeilleFiche.createdAt),
+// VALIDATION_JURIDIQUE / RENVOI_BU (= début d'attente d'approbation),
+// REJET_BU (= date du rejet), APPROBATION_BU — voir `src/domain/jalons.ts`
+// et GET /api/veille (`jalons` par fiche).
 model VeilleJournal {
   id             String           @id @default(uuid())
   alerteId       String?

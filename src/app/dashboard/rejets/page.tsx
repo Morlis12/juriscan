@@ -8,6 +8,8 @@ import type {
   FluxStatut,
 } from "@/domain/veille";
 import { CONFORMITE_POURCENTAGE, DEPARTEMENTS } from "@/domain/veille";
+import { dureeDepuis, formaterDateFR } from "@/domain/jalons";
+import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { estCentrale, peutGererRejet } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
@@ -18,6 +20,15 @@ interface ApiFiche {
   departement: DepartementCode;
   statutConformite: ConformiteStatut;
   fluxStatut?: FluxStatut;
+  /** Date d'assignation à la BU (= création de la fiche). */
+  createdAt: string;
+  /** Jalons workflow (dernières dates du journal SCD2). */
+  jalons?: {
+    valideeLe: string | null;
+    renvoyeeLe: string | null;
+    rejeteeLe: string | null;
+    approuveeLe: string | null;
+  } | null;
   actionsAmelioration: {
     id: string;
     libelleAction: string;
@@ -39,6 +50,10 @@ interface ApiAlerte {
 
 interface FicheRejet extends MockAlerte {
   fluxStatut: FluxStatut;
+  /** Date d'assignation à la BU (SQL : fiche.createdAt ; démo : journal CREATION). */
+  assigneeLe: string | null;
+  /** Date du rejet (SQL : journal REJET_BU ; démo : simulé). */
+  rejeteeLe: string | null;
 }
 
 const FLUX_DEMO: FluxStatut[] = [
@@ -85,6 +100,8 @@ export default function RejetsPage() {
                 ? Math.round(action.tauxAvancement)
                 : CONFORMITE_POURCENTAGE[f.statutConformite],
               fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
+              assigneeLe: f.createdAt ?? null,
+              rejeteeLe: f.jalons?.rejeteeLe ?? null,
             });
           }
         }
@@ -101,10 +118,15 @@ export default function RejetsPage() {
 
   const fichesDemo = useMemo<FicheRejet[]>(
     () =>
-      MOCK_ALERTES.map((m, i) => ({
-        ...m,
-        fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
-      })),
+      MOCK_ALERTES.map((m, i) => {
+        const jalons = jalonsDemoPourFiche(m.id);
+        return {
+          ...m,
+          fluxStatut: FLUX_DEMO[i % FLUX_DEMO.length],
+          assigneeLe: jalons.assigneeLe,
+          rejeteeLe: jalons.rejeteeLe,
+        };
+      }),
     [],
   );
 
@@ -259,6 +281,21 @@ export default function RejetsPage() {
                       </p>
                       <p className="mt-1 line-clamp-2 text-xs text-slate-600">
                         {f.resumeTexte}
+                      </p>
+                      <p className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-slate-500">
+                        <span>
+                          Assignée le{" "}
+                          <span className="font-semibold text-slate-700">
+                            {formaterDateFR(f.assigneeLe)}
+                          </span>
+                        </span>
+                        <span>
+                          Rejetée le{" "}
+                          <span className="font-semibold text-red-700">
+                            {formaterDateFR(f.rejeteeLe)}
+                          </span>
+                          {f.rejeteeLe && ` — il y a ${dureeDepuis(f.rejeteeLe)}`}
+                        </span>
                       </p>
                     </div>
                     <span className="rounded-full bg-red-100 px-2.5 py-0.5 text-xs font-semibold text-red-800 ring-1 ring-inset ring-red-600/20">

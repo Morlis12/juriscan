@@ -7,6 +7,9 @@ import { NextResponse } from "next/server";
  *   `src/lib/veille-save.ts`, aussi exposé via POST /api/sauvegarde).
  * - GET /api/veille : liste les alertes + fiches pour le tableau de bord
  *   (fusionnées aux mocks côté client, repli silencieux si DB absente).
+ *   Chaque fiche porte `createdAt` (= date d'assignation), `updatedAt`
+ *   (= dernière modification = état affiché) et `jalons` (validation,
+ *   renvoi, rejet, approbation — dernières entrées `VeilleJournal`).
  */
 
 import { prisma } from "@/lib/prisma";
@@ -52,7 +55,47 @@ export async function GET() {
         },
       },
     });
-    return NextResponse.json({ success: true, data: alertes });
+    // Jalons workflow par fiche : dernières dates de validation / renvoi /
+    // rejet / approbation lues dans le journal SCD2 (une seule requête).
+    const ficheIds = alertes.flatMap((a) => a.fichesDepartements.map((f) => f.id));
+    const journaux =
+      ficheIds.length > 0
+        ? await prisma.veilleJournal.findMany({
+            where: {
+              ficheId: { in: ficheIds },
+              action: { in: ["VALIDATION_JURIDIQUE", "RENVOI_BU", "REJET_BU", "APPROBATION_BU"] },
+            },
+            orderBy: { createdAt: "desc" },
+            take: Math.min(4000, ficheIds.length * 8),
+            select: { ficheId: true, action: true, createdAt: true },
+          })
+        : [];
+    const jalonsParFiche = new Map<
+      string,
+      { valideeLe: string | null; renvoyeeLe: string | null; rejeteeLe: string | null; approuveeLe: string | null }
+    >();
+    for (const j of journaux) {
+      if (!j.ficheId) continue;
+      let e = jalonsParFiche.get(j.ficheId);
+      if (!e) {
+        e = { valideeLe: null, renvoyeeLe: null, rejeteeLe: null, approuveeLe: null };
+        jalonsParFiche.set(j.ficheId, e);
+      }
+      const iso = j.createdAt.toISOString();
+      if (j.action === "VALIDATION_JURIDIQUE" && !e.valideeLe) e.valideeLe = iso;
+      else if (j.action === "RENVOI_BU" && !e.renvoyeeLe) e.renvoyeeLe = iso;
+      else if (j.action === "REJET_BU" && !e.rejeteeLe) e.rejeteeLe = iso;
+      else if (j.action === "APPROBATION_BU" && !e.approuveeLe) e.approuveeLe = iso;
+    }
+    const vide = { valideeLe: null, renvoyeeLe: null, rejeteeLe: null, approuveeLe: null };
+    const data = alertes.map((a) => ({
+      ...a,
+      fichesDepartements: a.fichesDepartements.map((f) => ({
+        ...f,
+        jalons: jalonsParFiche.get(f.id) ?? { ...vide },
+      })),
+    }));
+    return NextResponse.json({ success: true, data });
   } catch (error) {
     console.error("Erreur serveur API Veille (GET) :", error);
     const message = error instanceof Error ? error.message : "Erreur interne";

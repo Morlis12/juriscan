@@ -1,5 +1,6 @@
 import type { FluxStatut } from "@/domain/veille";
 import type { JournalEntree } from "@/domain/historique";
+import { JALONS_VIDES, type JalonsFiche } from "@/domain/jalons";
 import { MOCK_ALERTES } from "@/data/veille-mock";
 
 /**
@@ -128,3 +129,26 @@ function construire(): JournalEntree[] {
 }
 
 export const HISTORIQUE_DEMO: JournalEntree[] = construire();
+
+/**
+ * Jalons d'une fiche démo (assignation, validation, rejet, approbation,
+ * dernière modification) déduits de son journal simulé — même contrat que
+ * les `jalons` renvoyés par GET /api/veille pour les fiches SQL.
+ */
+export function jalonsDemoPourFiche(ficheId: string): JalonsFiche {
+  const j: JalonsFiche = { ...JALONS_VIDES };
+  for (const h of HISTORIQUE_DEMO) {
+    if (h.ficheId !== ficheId) continue;
+    if (h.action === "CREATION") {
+      if (!j.assigneeLe || h.createdAt < j.assigneeLe) j.assigneeLe = h.createdAt;
+    } else if (h.action === "VALIDATION_JURIDIQUE") {
+      if (!j.valideeLe || h.createdAt > j.valideeLe) j.valideeLe = h.createdAt;
+    } else if (h.action === "REJET_BU") {
+      if (!j.rejeteeLe || h.createdAt > j.rejeteeLe) j.rejeteeLe = h.createdAt;
+    } else if (h.action === "APPROBATION_BU") {
+      if (!j.approuveeLe || h.createdAt > j.approuveeLe) j.approuveeLe = h.createdAt;
+    }
+    if (!j.derniereModif || h.createdAt > j.derniereModif) j.derniereModif = h.createdAt;
+  }
+  return j;
+}
