@@ -437,8 +437,8 @@ export default function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-slate-100">
-      {/* EN-TÊTE FIXE AGL — vue générale unique du pilotage juridique */}
-      <header className="sticky top-0 z-50 backdrop-blur-md bg-brand-blue/95 text-white shadow-md">
+      {/* EN-TÊTE FIXE AGL — bleu plein #1C3359 (identique au fond du logo : fusion parfaite, sans translucidité). */}
+      <header className="sticky top-0 z-50 bg-brand-blue text-white shadow-md">
         <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
           <div className="flex items-center gap-3">
             <LogoAGL />
