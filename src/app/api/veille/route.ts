@@ -11,10 +11,20 @@ import { NextResponse } from "next/server";
 
 import { prisma } from "@/lib/prisma";
 import { creerFicheVeille } from "@/lib/veille-save";
+import { fusionnerAuteur, lireAuteur, lireAuteurDepuisCorps } from "@/lib/acces";
+import { estJuridique } from "@/domain/acces";
 
 export async function POST(req: Request) {
   try {
-    const alerte = await creerFicheVeille(await req.json());
+    const corps = await req.json();
+    const auteur = fusionnerAuteur(lireAuteur(req), lireAuteurDepuisCorps(corps));
+    if (!auteur.bu || !estJuridique(auteur.bu)) {
+      return NextResponse.json(
+        { error: "Création / assignation : réservée au juridique (CENTRAL_VRG, DJ)." },
+        { status: 403 },
+      );
+    }
+    const alerte = await creerFicheVeille(corps, auteur);
     return NextResponse.json({ success: true, data: alerte }, { status: 201 });
   } catch (error) {
     console.error("Erreur serveur API Veille :", error);

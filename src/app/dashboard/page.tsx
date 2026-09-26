@@ -8,6 +8,8 @@ import {
   DEPARTEMENTS,
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
+import { estJuridique, messageAccesRefuse, peutModifierFiche, peutValiderVersMetier } from "@/domain/acces";
+import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import {
   MOCK_ACTIONS,
   MOCK_ALERTES,
@@ -137,6 +139,9 @@ export default function DashboardPage() {
   const [dbAlertes, setDbAlertes] = useState<AlertePilotee[]>([]);
   const [dbActions, setDbActions] = useState<MockAction[]>([]);
   const [confirmation, setConfirmation] = useState<string | null>(null);
+  const [avertissement, setAvertissement] = useState<string | null>(null);
+  // BU connectée (cloisonnement) : seule votre BU modifie ses assignations.
+  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
   // Vue générale unique + filtres multicritères du pilotage juridique.
   const [filtreBU, setFiltreBU] = useState<FiltreBUCode>("ALL");
   const [filtreDate, setFiltreDate] = useState("");
@@ -306,17 +311,25 @@ export default function DashboardPage() {
   );
   /** Le juridique valide la fiche IA → bascule vers l'approbation métier. */
   async function validerVersMetier(id: string) {
+    if (!peutValiderVersMetier(buConnectee)) {
+      setAvertissement("Validation vers métier : réservée au juridique (CENTRAL_VRG, DJ).");
+      return;
+    }
     setDbAlertes((prev) =>
       prev.map((a) =>
         a.id === id ? { ...a, fluxStatut: "ATTENTE_APPROBATION_METIER" } : a,
       ),
     );
     try {
-      await fetch(`/api/veille/${encodeURIComponent(id)}`, {
+      const reponse = await fetch(`/api/veille/${encodeURIComponent(id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
         body: JSON.stringify({ fluxStatut: "ATTENTE_APPROBATION_METIER" }),
       });
+      if (!reponse.ok) {
+        const payload = (await reponse.json().catch(() => null)) as { error?: string } | null;
+        setAvertissement(payload?.error ?? "Validation refusée (droits BU).");
+      }
     } catch {
       /* démo locale : la transition optimiste suffit */
     }
@@ -324,14 +337,22 @@ export default function DashboardPage() {
 
   /** La BU pilote son taux d'avancement (tableau ou approbation), sans changer de flux. */
   async function sauvegarderTaux(f: AlertePilotee, taux: number) {
+    if (!peutModifierFiche(buConnectee, f.departement)) {
+      setAvertissement(messageAccesRefuse(buConnectee, f.departement));
+      return;
+    }
     const valeur = Math.min(100, Math.max(0, Math.round(taux)));
     setTauxCorriges((prev) => ({ ...prev, [f.id]: valeur }));
     try {
-      await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
+      const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
         body: JSON.stringify({ tauxAvancement: valeur }),
       });
+      if (!reponse.ok) {
+        const payload = (await reponse.json().catch(() => null)) as { error?: string } | null;
+        setAvertissement(payload?.error ?? "Taux refusé (réservé à votre BU).");
+      }
     } catch {
       /* démo locale : l'affichage optimiste suffit */
     }
@@ -433,6 +454,8 @@ export default function DashboardPage() {
             <span className="font-mono tabular-nums text-slate-100">
               {timeStr}
             </span>
+            <SelecteurBUConnectee />
+            {/* Commandes de page — uniquement en haut (jamais dupliquées au milieu). */}
             <Link
               href="/dashboard/rejets"
               className="rounded-full bg-red-500 px-4 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-red-600"
@@ -444,6 +467,19 @@ export default function DashboardPage() {
               className="rounded-full bg-brand-gold px-4 py-1.5 text-xs font-bold text-brand-blue shadow transition-colors hover:brightness-95"
             >
               Approbations métier →
+            </Link>
+            <Link
+              href="/dashboard/nouvelle-alerte"
+              className="rounded-full bg-white px-4 py-1.5 text-xs font-bold text-brand-blue shadow transition-colors hover:bg-brand-gold"
+            >
+              ➕ Nouvelle Alerte
+            </Link>
+            <Link
+              href="/dashboard/historique"
+              title="Traçabilité SCD2 : chaque modification est consultable ici"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
+            >
+              🕘 Historique
             </Link>
             <span className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium">
               <span className="relative flex h-2.5 w-2.5">
@@ -561,34 +597,39 @@ export default function DashboardPage() {
           )}
         </section>
 
+        {/* Périmètre — les commandes de page restent uniquement dans l'en-tête. */}
         <div className="flex flex-wrap items-center justify-between gap-3">
           <p className="text-sm text-slate-500">
             Périmètre : <span className="font-semibold text-brand-blue">{perimetreLabel}</span>
             {" — "}
             {groupes.length} texte{groupes.length > 1 ? "s" : ""} · {alertes.length} fiche
             {alertes.length > 1 ? "s" : ""} BU
+            {" — "}
+            Connecté :{" "}
+            <span className="font-semibold text-brand-blue">
+              {buConnectee}
+              {estJuridique(buConnectee) ? " (juridique, accès global)" : " (cloisonné à vos assignations)"}
+            </span>
+            {" — "}
+            <Link href="/dashboard/historique" className="font-semibold text-brand-blue underline decoration-brand-gold decoration-2 underline-offset-2">
+              Consulter l&apos;historique des modifications
+            </Link>
           </p>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href="/dashboard/rejets"
-              className="rounded-lg border border-red-500 px-4 py-2 text-sm font-semibold text-red-600 transition-colors hover:bg-red-600 hover:text-white"
-            >
-              ⚠ Rejets{nbRejets > 0 ? ` (${nbRejets})` : ""}
-            </Link>
-            <Link
-              href="/dashboard/approbations"
-              className="rounded-lg border border-brand-blue px-4 py-2 text-sm font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
-            >
-              Approbations métier
-            </Link>
-            <Link
-              href="/dashboard/nouvelle-alerte"
-              className="rounded-lg border border-brand-gold bg-brand-blue px-4 py-2 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-blue/90"
-            >
-              ➕ Nouvelle Alerte
-            </Link>
-          </div>
         </div>
+
+        {avertissement && (
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 shadow-sm">
+            <span>🔒 {avertissement}</span>
+            <button
+              type="button"
+              onClick={() => setAvertissement(null)}
+              className="rounded-full px-2 py-0.5 text-amber-700 hover:bg-amber-100"
+              aria-label="Fermer l'avertissement"
+            >
+              ✕
+            </button>
+          </div>
+        )}
 
         {confirmation && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-800 shadow-sm">
@@ -849,7 +890,10 @@ export default function DashboardPage() {
                               Niveaux de conformité par BU — {g.numeroOrdre}
                             </p>
                             <ul className="grid gap-2 md:grid-cols-2">
-                              {g.fiches.map((f) => (
+                              {g.fiches.map((f) => {
+                                const modifiable = peutModifierFiche(buConnectee, f.departement);
+                                const validable = peutValiderVersMetier(buConnectee);
+                                return (
                                 <li
                                   key={f.id}
                                   className="space-y-2 rounded-lg border border-slate-200 bg-white px-3 py-2"
@@ -858,6 +902,11 @@ export default function DashboardPage() {
                                     <div className="min-w-0">
                                       <p className="text-xs font-bold text-brand-blue">
                                         {f.departement}
+                                        {!modifiable && (
+                                          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">
+                                            🔒 lecture seule
+                                          </span>
+                                        )}
                                       </p>
                                       <p className="mt-1 flex flex-wrap items-center gap-1">
                                         <span
@@ -891,15 +940,32 @@ export default function DashboardPage() {
                                       )}
                                     </div>
                                     <div className="flex items-center gap-2">
+                                      {modifiable ? (
+                                        <Link
+                                          href={`/dashboard/alertes/${f.id}`}
+                                          title="Modifier ma fiche BU"
+                                          onClick={(e) => e.stopPropagation()}
+                                          className="rounded-lg border border-brand-blue px-2.5 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white"
+                                        >
+                                          Modifier
+                                        </Link>
+                                      ) : (
+                                        <span
+                                          title={messageAccesRefuse(buConnectee, f.departement)}
+                                          className="cursor-not-allowed rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-400"
+                                        >
+                                          🔒 Modifier
+                                        </span>
+                                      )}
                                       <Link
-                                        href={`/dashboard/alertes/${f.id}`}
-                                        title="Modifier la fiche BU"
+                                        href={`/dashboard/historique?fiche=${encodeURIComponent(f.id)}`}
+                                        title="Consulter l'historique SCD2 de cette fiche"
                                         onClick={(e) => e.stopPropagation()}
-                                        className="rounded-lg border border-brand-blue px-2.5 py-1 text-xs font-semibold text-brand-blue hover:bg-brand-blue hover:text-white"
+                                        className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-brand-gold hover:text-brand-blue"
                                       >
-                                        Modifier
+                                        🕘 Historique
                                       </Link>
-                                      {f.fluxStatut === "ATTENTE_VALIDATION_JURIDIQUE" ? (
+                                      {f.fluxStatut === "ATTENTE_VALIDATION_JURIDIQUE" && validable ? (
                                         <button
                                           type="button"
                                           onClick={(e) => {
@@ -913,34 +979,40 @@ export default function DashboardPage() {
                                       ) : null}
                                     </div>
                                   </div>
-                                  {/* Taux piloté par la BU (tableau ou approbation). */}
-                                  <label className="block">
+                                  {/* Taux piloté par la BU propriétaire (cloisons BU, tracé SCD2). */}
+                                  <label className="block" title={modifiable ? "Pilotez votre taux (BU propriétaire)" : messageAccesRefuse(buConnectee, f.departement)}>
                                     <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-brand-blue">
                                       Taux d&apos;avancement (BU) — {f.tauxAvancement} %
+                                      {!modifiable && " 🔒"}
                                     </span>
                                     <input
                                       type="range"
                                       min={0}
                                       max={100}
                                       value={f.tauxAvancement}
+                                      disabled={!modifiable}
                                       onClick={(e) => e.stopPropagation()}
                                       onChange={(e) =>
+                                        modifiable &&
                                         setTauxCorriges((prev) => ({
                                           ...prev,
                                           [f.id]: Number(e.target.value),
                                         }))
                                       }
                                       onPointerUp={(e) =>
+                                        modifiable &&
                                         sauvegarderTaux(f, Number((e.target as HTMLInputElement).value))
                                       }
                                       onKeyUp={(e) =>
+                                        modifiable &&
                                         sauvegarderTaux(f, Number((e.target as HTMLInputElement).value))
                                       }
-                                      className="w-full accent-[#1C3359]"
+                                      className="w-full accent-[#1C3359] disabled:cursor-not-allowed disabled:opacity-40"
                                     />
                                   </label>
                                 </li>
-                              ))}
+                                );
+                              })}
                             </ul>
                           </td>
                         </tr>

@@ -2,8 +2,9 @@
  * JuriScan AI — Mapping Dataverse (portable, sans dépendance Prisma/Next.js).
  *
  * Recréation cible dans Dataverse / Power Pages :
- * - 4 tables : User, VeilleAlerte, VeilleFiche, VeilleAction
- * - 3 jeux d'options (OptionSets) : DepartementCode, ConformiteStatut, FluxStatut
+ * - 7 tables : User, VeilleAlerte, VeilleFiche, VeilleAction (+ SCD2 :
+ *   VeilleFicheVersion, VeilleActionVersion, VeilleJournal).
+ * - 3 jeux d'options (OptionSets) : DepartementCode, ConformiteStatut, FluxStatut.
  * - Relations : voir `relations` ci-dessous (lookup + cascade).
  * - Workflow double validation : `VeilleAlerte.propositionBU` (recommandation IA)
  *   → `VeilleFiche.fluxStatut` (ATTENTE_VALIDATION_JURIDIQUE → ATTENTE_APPROBATION_METIER
@@ -11,6 +12,14 @@
  * - Multi-BU : un texte peut concerner plusieurs BU → une `VeilleFiche` par BU
  *   cochée (cases à cocher de l'écran nouvelle-alerte) ; le pilotage regroupe
  *   par `numeroOrdre` et affiche la conformité de chaque BU.
+ * - Cloisonnement BU : 1 Business Unit + 1 Team par BU ; Security Role
+ *   « JuriScan BU » (lecture globale, écriture si `departement` == équipe),
+ *   « JuriScan Juridique » (écriture globale + assignation). Voir
+ *   `src/domain/acces.ts` (matrice prototype → rôles Dataverse).
+ * - Traçabilité SCD2 : activer l'Auditing natif + recréer `VeilleJournal`
+ *   (lecture Power Pages `/dashboard/historique`) et les tables `*Version`
+ *   (colonnes validFrom/validTo/isCurrent/version). Voir
+ *   `src/domain/historique.ts` et `src/lib/historique.ts`.
  */
 
 export interface DataverseField {
@@ -106,6 +115,11 @@ export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
       { logicalName: "preuvedifferee", displayName: "Preuve de conformité différée", dataType: "MultipleLinesOfText" },
       { logicalName: "fluxstatut", displayName: "Statut du workflow (double validation)", dataType: "OptionSet" },
       { logicalName: "preuvefichier", displayName: "Document de preuve (fichier)", dataType: "File" },
+      { logicalName: "version", displayName: "Version SCD2", dataType: "WholeNumber" },
+      { logicalName: "validfrom", displayName: "Valide depuis (SCD2)", dataType: "DateTime" },
+      { logicalName: "validto", displayName: "Valide jusqu'à (SCD2)", dataType: "DateTime" },
+      { logicalName: "iscurrent", displayName: "Version courante (SCD2)", dataType: "TwoOptions" },
+      { logicalName: "modifiedbybu", displayName: "BU auteur (SCD2)", dataType: "OptionSet" },
     ],
   },
   VeilleAction: {
@@ -117,6 +131,54 @@ export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
       { logicalName: "responsable", displayName: "Responsable", dataType: "Lookup" },
       { logicalName: "delai", displayName: "Délai", dataType: "DateTime" },
       { logicalName: "tauxavancement", displayName: "Taux d'avancement (%)", dataType: "DecimalNumber" },
+      { logicalName: "version", displayName: "Version SCD2", dataType: "WholeNumber" },
+      { logicalName: "validfrom", displayName: "Valide depuis (SCD2)", dataType: "DateTime" },
+      { logicalName: "validto", displayName: "Valide jusqu'à (SCD2)", dataType: "DateTime" },
+      { logicalName: "iscurrent", displayName: "Version courante (SCD2)", dataType: "TwoOptions" },
+      { logicalName: "modifiedbybu", displayName: "BU auteur (SCD2)", dataType: "OptionSet" },
+    ],
+  },
+  VeilleFicheVersion: {
+    displayName: "Version fiche (SCD2)",
+    primaryColumn: "fiche",
+    fields: [
+      { logicalName: "fiche", displayName: "Fiche courante", dataType: "Lookup" },
+      { logicalName: "version", displayName: "Version figée", dataType: "WholeNumber" },
+      { logicalName: "validfrom", displayName: "Valide depuis", dataType: "DateTime" },
+      { logicalName: "validto", displayName: "Valide jusqu'à", dataType: "DateTime" },
+      { logicalName: "departement", displayName: "Département", dataType: "OptionSet" },
+      { logicalName: "statutconformite", displayName: "Statut de conformité", dataType: "OptionSet" },
+      { logicalName: "fluxstatut", displayName: "Statut workflow", dataType: "OptionSet" },
+      { logicalName: "modifiedbybu", displayName: "BU auteur", dataType: "OptionSet" },
+      { logicalName: "motif", displayName: "Motif (PUT/PATCH)", dataType: "SingleLineOfText" },
+    ],
+  },
+  VeilleActionVersion: {
+    displayName: "Version action (SCD2)",
+    primaryColumn: "action",
+    fields: [
+      { logicalName: "action", displayName: "Action courante", dataType: "Lookup" },
+      { logicalName: "fiche", displayName: "Fiche parente", dataType: "Lookup" },
+      { logicalName: "version", displayName: "Version figée", dataType: "WholeNumber" },
+      { logicalName: "validfrom", displayName: "Valide depuis", dataType: "DateTime" },
+      { logicalName: "validto", displayName: "Valide jusqu'à", dataType: "DateTime" },
+      { logicalName: "libelleaction", displayName: "Action", dataType: "MultipleLinesOfText" },
+      { logicalName: "tauxavancement", displayName: "Taux (%)", dataType: "DecimalNumber" },
+      { logicalName: "modifiedbybu", displayName: "BU auteur", dataType: "OptionSet" },
+      { logicalName: "motif", displayName: "Motif (PUT/PATCH)", dataType: "SingleLineOfText" },
+    ],
+  },
+  VeilleJournal: {
+    displayName: "Journal des modifications",
+    primaryColumn: "action",
+    fields: [
+      { logicalName: "alerte", displayName: "Alerte", dataType: "Lookup" },
+      { logicalName: "fiche", displayName: "Fiche", dataType: "Lookup" },
+      { logicalName: "entite", displayName: "Entité (ALERTE/FICHE/ACTION)", dataType: "SingleLineOfText" },
+      { logicalName: "action", displayName: "Action tracée", dataType: "SingleLineOfText" },
+      { logicalName: "buauteur", displayName: "BU auteur", dataType: "OptionSet" },
+      { logicalName: "details", displayName: "Détail lisible", dataType: "MultipleLinesOfText" },
+      { logicalName: "champsmodifies", displayName: "Champs modifiés (JSON)", dataType: "MultipleLinesOfText" },
     ],
   },
 };
@@ -129,4 +191,8 @@ export const DATAVERSE_RELATIONS = [
   "VeilleAlerte (1) → VeilleFiche (N) via alerteId [Cascade]",
   "VeilleFiche (1) → VeilleAction (N) via ficheId [Cascade]",
   "User (1) → VeilleAction (N) via responsableId [Optionnel, Restrict]",
+  "VeilleFiche (1) → VeilleFicheVersion (N) via ficheId [Cascade, SCD2]",
+  "VeilleAction (1) → VeilleActionVersion (N) via actionId [Cascade, SCD2]",
+  "VeilleAlerte (1) → VeilleJournal (N) via alerteId [Cascade, lecture Power Pages]",
+  "VeilleFiche (1) → VeilleJournal (N) via ficheId [Cascade, lecture Power Pages]",
 ] as const;

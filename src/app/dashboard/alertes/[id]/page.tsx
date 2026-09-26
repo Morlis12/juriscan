@@ -5,6 +5,10 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/veille";
 import { NATURES_TEXTE } from "@/domain/veille";
+import { estJuridique, messageAccesRefuse, peutModifierFiche } from "@/domain/acces";
+import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import type { JournalEntree } from "@/domain/historique";
+import { HISTORIQUE_ACTION_LABELS } from "@/domain/historique";
 import {
   DEPARTEMENT_OPTIONS,
   creerAlerteVierge,
@@ -70,7 +74,9 @@ const isoJour = (v: string | null): string => (v ?? "").slice(0, 10);
 export default function ModifierAlertePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
+  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
   const [form, setForm] = useState<AlerteAnalyse21 | null>(null);
+  const [ficheBU, setFicheBU] = useState<DepartementCode | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
   const [preuveFichier, setPreuveFichier] = useState<PreuveFichierValeur | null>(null);
   const [demo, setDemo] = useState(false);
@@ -78,6 +84,7 @@ export default function ModifierAlertePage() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [noteResp, setNoteResp] = useState(false);
+  const [historique, setHistorique] = useState<JournalEntree[] | null>(null);
 
   useEffect(() => {
     let actif = true;
@@ -90,6 +97,7 @@ export default function ModifierAlertePage() {
           setErreur("Fiche introuvable.");
         } else {
           const socle = creerAlerteVierge();
+          setFicheBU(mock.departement);
           setForm({
             ...socle,
             numeroOrdre: mock.numeroOrdre,
@@ -123,6 +131,7 @@ export default function ModifierAlertePage() {
           return;
         }
         const { alerte, fiche, action } = payload.data;
+        setFicheBU(fiche.departement);
         setForm({
           numeroOrdre: alerte.numeroOrdre,
           qssfte: alerte.qssfte ?? "",
@@ -174,8 +183,33 @@ export default function ModifierAlertePage() {
     setForm((prev) => (prev ? { ...prev, [key]: value } : prev));
   }
 
+  // Historique SCD2 de la fiche (repli silencieux si DB absente / démo).
+  useEffect(() => {
+    if (params.id.startsWith("mock-")) return;
+    let actif = true;
+    fetch(`/api/veille/${params.id}/historique`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((payload: { success?: boolean; data?: { journal?: JournalEntree[] } } | null) => {
+        if (actif && payload?.success && Array.isArray(payload.data?.journal)) {
+          setHistorique(payload.data.journal as JournalEntree[]);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      actif = false;
+    };
+  }, [params.id]);
+
   async function enregistrer() {
     if (!form) return;
+    if (ficheBU && !peutModifierFiche(buConnectee, ficheBU)) {
+      setErreur(messageAccesRefuse(buConnectee, ficheBU));
+      return;
+    }
+    if (form.departementResponsable !== ficheBU && !estJuridique(buConnectee)) {
+      setErreur("Réassignation vers une autre BU : réservée au juridique.");
+      return;
+    }
     setSaving(true);
     setErreur(null);
     setNoteResp(false);
@@ -193,9 +227,11 @@ export default function ModifierAlertePage() {
     try {
       const reponse = await fetch(`/api/veille/${params.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
         body: JSON.stringify({
           ...form,
+          buConnectee,
+          emailConnecte,
           actionId,
           preuveFichierNom: preuveFichier?.nom ?? "",
           preuveFichierMime: preuveFichier?.mime ?? "",
@@ -238,12 +274,21 @@ export default function ModifierAlertePage() {
               <p className="font-mono text-xs text-slate-300">{params.id}</p>
             </div>
           </div>
-          <Link
-            href="/dashboard"
-            className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
-          >
-            ← Retour tableau de bord
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <SelecteurBUConnectee />
+            <Link
+              href={`/dashboard/historique?fiche=${encodeURIComponent(params.id)}`}
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
+            >
+              🕘 Historique
+            </Link>
+            <Link
+              href="/dashboard"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
+            >
+              ← Retour tableau de bord
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -296,6 +341,15 @@ export default function ModifierAlertePage() {
                   Responsable non rattaché (aucun User avec cet email) — autres champs enregistrés.
                 </p>
               )}
+              {ficheBU && !peutModifierFiche(buConnectee, ficheBU) ? (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                  🔒 Fiche {ficheBU} en lecture seule — vous êtes connecté en {buConnectee}. Basculez la BU en haut pour modifier.
+                </p>
+              ) : ficheBU && !estJuridique(buConnectee) ? (
+                <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue">
+                  Texte source figé (réservé au juridique) — vous pilotez la conformité {ficheBU} (preuves, statut, action, délai, taux).
+                </p>
+              ) : null}
 
               <Bloc titre="Alerte — texte source (12 champs)">
                 <Champ label="01 · N° d'ordre" value={form.numeroOrdre} onChange={(v) => set("numeroOrdre", v)} mono />
@@ -417,11 +471,59 @@ export default function ModifierAlertePage() {
               <button
                 type="button"
                 onClick={enregistrer}
-                disabled={saving}
+                disabled={saving || (!!ficheBU && !peutModifierFiche(buConnectee, ficheBU))}
+                title={ficheBU && !peutModifierFiche(buConnectee, ficheBU) ? messageAccesRefuse(buConnectee, ficheBU) : "Enregistrer (tracé SCD2)"}
                 className="w-full rounded-xl bg-brand-blue px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-brand-blue/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Enregistrement en cours…" : "💾 Enregistrer les Modifications"}
               </button>
+            </div>
+          </section>
+        )}
+
+        {/* Historique SCD2 de la fiche — traçabilité consultable */}
+        {form && !params.id.startsWith("mock-") && (
+          <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-2 bg-brand-blue px-5 py-3">
+              <h2 className="text-base font-bold text-white">🕘 Historique des modifications (SCD2)</h2>
+              <Link
+                href={`/dashboard/historique?fiche=${encodeURIComponent(params.id)}`}
+                className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white hover:bg-brand-gold hover:text-brand-blue"
+              >
+                Tout l&apos;historique →
+              </Link>
+            </div>
+            <div className="px-5 py-4">
+              {!historique ? (
+                <p className="py-2 text-center text-xs text-slate-400">
+                  Chargement de l&apos;historique… (repli silencieux si base absente).
+                </p>
+              ) : historique.length === 0 ? (
+                <p className="py-2 text-center text-xs text-slate-400">
+                  Aucune modification tracée pour l&apos;instant — chaque enregistrement apparaîtra ici (version SCD2 + journal).
+                </p>
+              ) : (
+                <ul className="space-y-2">
+                  {historique.slice(0, 10).map((h) => (
+                    <li key={h.id} className="rounded-lg bg-slate-50 px-3 py-2 text-xs">
+                      <p className="font-bold text-brand-blue">
+                        {HISTORIQUE_ACTION_LABELS[(h.action as keyof typeof HISTORIQUE_ACTION_LABELS)] ?? h.action}
+                        <span className="ml-2 font-normal text-slate-500">
+                          {new Date(h.createdAt).toLocaleString("fr-FR")}
+                          {h.buAuteur ? ` · ${h.buAuteur}` : ""}
+                          {h.emailAuteur ? ` · ${h.emailAuteur}` : ""}
+                        </span>
+                      </p>
+                      {h.details && <p className="mt-0.5 text-slate-600">{h.details}</p>}
+                      {h.champsModifies.length > 0 && (
+                        <p className="mt-0.5 font-mono text-[11px] text-slate-400">
+                          champs : {h.champsModifies.join(", ")}
+                        </p>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
           </section>
         )}

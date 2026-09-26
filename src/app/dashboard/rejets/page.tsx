@@ -7,10 +7,9 @@ import type {
   DepartementCode,
   FluxStatut,
 } from "@/domain/veille";
-import {
-  CONFORMITE_POURCENTAGE,
-  DEPARTEMENTS,
-} from "@/domain/veille";
+import { CONFORMITE_POURCENTAGE, DEPARTEMENTS } from "@/domain/veille";
+import { estJuridique, peutGererRejet, peutModifierFiche } from "@/domain/acces";
+import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
 
 interface ApiFiche {
@@ -58,6 +57,9 @@ export default function RejetsPage() {
   const [filtreBU, setFiltreBU] = useState<"ALL" | DepartementCode>("ALL");
   const [message, setMessage] = useState<string | null>(null);
   const [traitement, setTraitement] = useState(false);
+  // Retraitement réservé au juridique ; les BU voient leurs rejets en lecture.
+  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
+  const juridique = estJuridique(buConnectee);
 
   useEffect(() => {
     let actif = true;
@@ -119,6 +121,10 @@ export default function RejetsPage() {
 
   /** Retraite le rejet : renvoie la fiche vers la BU (attente d'approbation). */
   async function renvoyerVersBU(f: FicheRejet) {
+    if (!peutGererRejet(buConnectee)) {
+      setMessage("🔒 Renvoi vers la BU : réservé au juridique (CENTRAL_VRG, DJ).");
+      return;
+    }
     setTraitement(true);
     setMessage(null);
     setFiches((prev) => {
@@ -129,11 +135,16 @@ export default function RejetsPage() {
       return [...prev, maj];
     });
     try {
-      await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
+      const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
         body: JSON.stringify({ fluxStatut: "ATTENTE_APPROBATION_METIER" }),
       });
+      if (!reponse.ok) {
+        const payload = (await reponse.json().catch(() => null)) as { error?: string } | null;
+        setMessage(payload?.error ?? "Renvoi refusé (réservé au juridique).");
+        return;
+      }
     } catch {
       /* démo locale : transition optimiste suffisante */
     } finally {
@@ -159,7 +170,14 @@ export default function RejetsPage() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <SelecteurBUConnectee />
+            <Link
+              href="/dashboard/historique"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
+            >
+              🕘 Historique
+            </Link>
             <Link
               href="/dashboard/approbations"
               className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
@@ -185,7 +203,8 @@ export default function RejetsPage() {
               </h2>
               <p className="mt-1 text-xs text-slate-500">
                 {rejets.length} rejet{rejets.length > 1 ? "s" : ""} à retraiter
-                {filtreBU !== "ALL" ? ` · BU : ${filtreBU}` : ""}.
+                {filtreBU !== "ALL" ? ` · BU : ${filtreBU}` : ""}. Retraitement réservé au
+                juridique — connecté : <span className="font-semibold">{buConnectee}</span>.
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -248,20 +267,35 @@ export default function RejetsPage() {
                     </span>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={`/dashboard/alertes/${f.id}`}
-                      className="rounded-lg border border-brand-blue px-4 py-2 text-xs font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
-                    >
-                      Modifier / réassigner
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={() => renvoyerVersBU(f)}
-                      disabled={traitement}
-                      className="rounded-lg bg-brand-gold px-4 py-2 text-xs font-bold text-brand-blue shadow-sm transition-colors hover:brightness-95 disabled:opacity-50"
-                    >
-                      {traitement ? "Envoi…" : "Renvoyer à la BU →"}
-                    </button>
+                    {peutModifierFiche(buConnectee, f.departement) && juridique ? (
+                      <Link
+                        href={`/dashboard/alertes/${f.id}`}
+                        className="rounded-lg border border-brand-blue px-4 py-2 text-xs font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white"
+                      >
+                        Modifier / réassigner
+                      </Link>
+                    ) : (
+                      <span
+                        title="Retraitement : réservé au juridique"
+                        className="cursor-not-allowed rounded-lg border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-400"
+                      >
+                        🔒 Modifier / réassigner
+                      </span>
+                    )}
+                    {juridique ? (
+                      <button
+                        type="button"
+                        onClick={() => renvoyerVersBU(f)}
+                        disabled={traitement}
+                        className="rounded-lg bg-brand-gold px-4 py-2 text-xs font-bold text-brand-blue shadow-sm transition-colors hover:brightness-95 disabled:opacity-50"
+                      >
+                        {traitement ? "Envoi…" : "Renvoyer à la BU →"}
+                      </button>
+                    ) : (
+                      <span className="rounded-lg bg-slate-50 px-4 py-2 text-xs font-medium text-slate-500">
+                        🔒 Renvoi réservé au juridique
+                      </span>
+                    )}
                   </div>
                 </li>
               ))}

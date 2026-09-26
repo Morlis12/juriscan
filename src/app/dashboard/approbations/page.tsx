@@ -13,6 +13,8 @@ import {
   DEPARTEMENTS,
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
+import { messageAccesRefuse, peutStatuerAssignation } from "@/domain/acces";
+import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
 import {
   PreuveFichierInput,
@@ -93,8 +95,10 @@ const STATUTS_CONFORMITE: { code: ConformiteStatut; label: string }[] = [
 ];
 
 export default function ApprobationsPage() {
-  // Simulation de connexion métier : la DRH ou la DAF ne voit que ses fiches.
+  // File affichée (démo) + BU réellement connectée (cloisonnement) : seule la
+  // BU connectée peut approuver / rejeter ses assignations.
   const [bu, setBu] = useState<BUConcernee>("DRH");
+  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
   const [fiches, setFiches] = useState<FicheApprobation[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [formOuvert, setFormOuvert] = useState<string | null>(null);
@@ -217,6 +221,10 @@ export default function ApprobationsPage() {
   }
 
   async function rejeter(f: FicheApprobation) {
+    if (!peutStatuerAssignation(buConnectee, f.departement)) {
+      setMessage(`🔒 ${messageAccesRefuse(buConnectee, f.departement)} Basculez la BU connectée (en haut) vers ${f.departement} pour statuer.`);
+      return;
+    }
     setTraitement(true);
     setMessage(null);
     // Optimiste : la fiche repart au juridique (retirée de la file métier).
@@ -227,11 +235,16 @@ export default function ApprobationsPage() {
       return [...prev, { ...f, fluxStatut: "REJETE_METIER" as FluxStatut }];
     });
     try {
-      await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
+      const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
         body: JSON.stringify({ fluxStatut: "REJETE_METIER" }),
       });
+      if (!reponse.ok) {
+        const payload = (await reponse.json().catch(() => null)) as { error?: string } | null;
+        setMessage(payload?.error ?? "Rejet refusé (droits BU).");
+        return;
+      }
     } catch {
       /* démo locale : transition optimiste suffisante */
     } finally {
@@ -242,6 +255,10 @@ export default function ApprobationsPage() {
   }
 
   async function approuver(f: FicheApprobation) {
+    if (!peutStatuerAssignation(buConnectee, f.departement)) {
+      setMessage(`🔒 ${messageAccesRefuse(buConnectee, f.departement)} Basculez la BU connectée (en haut) vers ${f.departement} pour approuver.`);
+      return;
+    }
     if (!libelleAction.trim()) {
       setMessage("Renseignez l'action de mise en conformité avant d'approuver.");
       return;
@@ -273,7 +290,7 @@ export default function ApprobationsPage() {
     try {
       const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
         body: JSON.stringify({
           fluxStatut: "APPROUVE_METIER",
           libelleAction: libelleAction.trim(),
@@ -290,11 +307,16 @@ export default function ApprobationsPage() {
           actionId: f.actionId,
         }),
       });
-      const payload = (await reponse.json()) as {
+      const payload = (await reponse.json().catch(() => null)) as {
         success?: boolean;
         responsableNonLie?: boolean;
-      };
-      if (payload.responsableNonLie) setNoteResp(true);
+        error?: string;
+      } | null;
+      if (!reponse.ok) {
+        setMessage(payload?.error ?? "Approbation refusée (droits BU).");
+        return;
+      }
+      if (payload?.responsableNonLie) setNoteResp(true);
     } catch {
       /* démo locale : transition optimiste suffisante */
     } finally {
@@ -324,26 +346,36 @@ export default function ApprobationsPage() {
               </p>
             </div>
           </div>
-          <Link
-            href="/dashboard"
-            className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
-          >
-            ← Pilotage juridique
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <SelecteurBUConnectee />
+            <Link
+              href="/dashboard/historique"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
+            >
+              🕘 Historique
+            </Link>
+            <Link
+              href="/dashboard"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
+            >
+              ← Pilotage juridique
+            </Link>
+          </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-        {/* Sélecteur de BU connectée */}
+        {/* File affichée (filtre démo) + cloisonnement par BU connectée */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="text-sm font-bold uppercase tracking-wide text-brand-blue">
-                Direction métier connectée
+                File d&apos;approbation affichée
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                Démonstration : choisissez la BU (DRH, DAF…) pour voir sa file
-                d&apos;attente d&apos;approbation.
+                Filtre d&apos;affichage (DRH, DAF…) — mais seules les fiches de votre BU
+                connectée ({buConnectee}) sont approuvables / rejetables (les autres sont
+                verrouillées 🔒). Basculez la BU connectée en haut pour changer de périmètre d&apos;action.
               </p>
             </div>
             <label className="flex items-center gap-2 text-sm">
@@ -590,21 +622,32 @@ export default function ApprobationsPage() {
                     </div>
                   ) : (
                     <div className="flex flex-wrap gap-2">
-                      <button
-                        type="button"
-                        onClick={() => rejeter(f)}
-                        disabled={traitement}
-                        className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-700 disabled:opacity-50"
-                      >
-                        Rejeter l&apos;assignation
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => ouvrirFormulaire(f)}
-                        className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 sm:flex-none sm:px-6"
-                      >
-                        Approuver & Initialiser la Conformité
-                      </button>
+                      {peutStatuerAssignation(buConnectee, f.departement) ? (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => rejeter(f)}
+                            disabled={traitement}
+                            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-red-700 disabled:opacity-50"
+                          >
+                            Rejeter l&apos;assignation
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => ouvrirFormulaire(f)}
+                            className="flex-1 rounded-lg bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm transition-colors hover:bg-emerald-700 sm:flex-none sm:px-6"
+                          >
+                            Approuver & Initialiser la Conformité
+                          </button>
+                        </>
+                      ) : (
+                        <p
+                          title={messageAccesRefuse(buConnectee, f.departement)}
+                          className="w-full rounded-lg bg-slate-50 px-3 py-2 text-xs font-medium text-slate-500"
+                        >
+                          🔒 Fiche {f.departement} en lecture seule — connectez-vous en {f.departement} (sélecteur en haut) pour approuver ou rejeter.
+                        </p>
+                      )}
                     </div>
                   )}
                 </li>

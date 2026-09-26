@@ -52,6 +52,15 @@ export interface FicheVeillePayload {
   libelleAction?: unknown;
   delai?: unknown;
   tauxAvancement?: unknown;
+  /** Pont prototype → Entra ID : BU / email de l'auteur (issus des en-têtes). */
+  buConnectee?: unknown;
+  emailConnecte?: unknown;
+}
+
+/** Auteur SCD2 (BU + email) propagé depuis les en-têtes vers le journal. */
+export interface AuteurVeille {
+  bu: DepartementCode | null;
+  email: string | null;
 }
 
 function chaine(v: unknown): string {
@@ -131,7 +140,7 @@ export function parseFicheRouteId(
   return { alerteId, ficheId };
 }
 
-export async function creerFicheVeille(b: FicheVeillePayload) {
+export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeille = { bu: null, email: null }) {
   const numeroOrdre = chaine(b.numeroOrdre).trim();
   const natureTexte = chaine(b.natureTexte).trim();
   const referenceTexte = chaine(b.referenceTexte).trim();
@@ -201,51 +210,73 @@ export async function creerFicheVeille(b: FicheVeillePayload) {
   const libelleAction = chaine(b.libelleAction).trim();
 
   const creer = async (ordre: string) =>
-    prisma.veilleAlerte.create({
-      data: {
-        numeroOrdre: ordre,
-        qssfte: chaine(b.qssfte).trim() || null,
-        natureTexte,
-        referenceTexte,
-        article: chaine(b.article).trim() || null,
-        resumeTexte,
-        libelleApplicable,
-        lienHypertexte: chaine(b.lienHypertexte).trim() || null,
-        dateEntreeVigueur: dateOuNull(b.dateEntreeVigueur),
-        contenu: chaine(b.contenu).trim() || resumeTexte,
-        moyenCommunication: chaine(b.moyenCommunication).trim() || null,
-        applicableA_AGL_CI: b.applicableAGLCI !== false,
-        propositionBU,
-        fichesDepartements: {
-          create: departements.map((code) => ({
-            departement: code as DepartementCode,
-            actionsExistantes: chaine(b.actionsExistantes).trim() || null,
-            preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
-            statutConformite: statut as ConformiteStatut,
-            preuveDifferee: chaine(b.preuveDifferee).trim() || null,
-            fluxStatut,
-            ...(preuveFichier
-              ? {
-                  preuveFichierNom: preuveFichier.nom,
-                  preuveFichierMime: preuveFichier.mime,
-                  preuveFichierDonnees: preuveFichier.donnees,
-                }
-              : {}),
-            ...(libelleAction
-              ? {
-                  actionsAmelioration: {
-                    create: {
-                      libelleAction,
-                      delai: dateOuNull(b.delai),
-                      tauxAvancement: taux,
+    prisma.$transaction(async (tx) => {
+      const alerte = await tx.veilleAlerte.create({
+        data: {
+          numeroOrdre: ordre,
+          qssfte: chaine(b.qssfte).trim() || null,
+          natureTexte,
+          referenceTexte,
+          article: chaine(b.article).trim() || null,
+          resumeTexte,
+          libelleApplicable,
+          lienHypertexte: chaine(b.lienHypertexte).trim() || null,
+          dateEntreeVigueur: dateOuNull(b.dateEntreeVigueur),
+          contenu: chaine(b.contenu).trim() || resumeTexte,
+          moyenCommunication: chaine(b.moyenCommunication).trim() || null,
+          applicableA_AGL_CI: b.applicableAGLCI !== false,
+          propositionBU,
+          fichesDepartements: {
+            create: departements.map((code) => ({
+              departement: code as DepartementCode,
+              actionsExistantes: chaine(b.actionsExistantes).trim() || null,
+              preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
+              statutConformite: statut as ConformiteStatut,
+              preuveDifferee: chaine(b.preuveDifferee).trim() || null,
+              fluxStatut,
+              modifiedByBU: auteur.bu,
+              modifiedByEmail: auteur.email,
+              ...(preuveFichier
+                ? {
+                    preuveFichierNom: preuveFichier.nom,
+                    preuveFichierMime: preuveFichier.mime,
+                    preuveFichierDonnees: preuveFichier.donnees,
+                  }
+                : {}),
+              ...(libelleAction
+                ? {
+                    actionsAmelioration: {
+                      create: {
+                        libelleAction,
+                        delai: dateOuNull(b.delai),
+                        tauxAvancement: taux,
+                        modifiedByBU: auteur.bu,
+                        modifiedByEmail: auteur.email,
+                      },
                     },
-                  },
-                }
-              : {}),
-          })),
+                  }
+                : {}),
+            })),
+          },
         },
-      },
-      include: { fichesDepartements: { include: { actionsAmelioration: true } } },
+        include: { fichesDepartements: { include: { actionsAmelioration: true } } },
+      });
+      // SCD2 : journal de création (une entrée par fiche assignée, consultable).
+      for (const f of alerte.fichesDepartements) {
+        await tx.veilleJournal.create({
+          data: {
+            alerteId: alerte.id,
+            ficheId: f.id,
+            entite: "FICHE",
+            action: "CREATION",
+            buAuteur: auteur.bu,
+            emailAuteur: auteur.email,
+            details: `Assignée à ${f.departement} (texte ${ordre}).`,
+            champsModifies: JSON.stringify(["departement", "fluxStatut"]),
+          },
+        });
+      }
+      return alerte;
     });
 
   try {

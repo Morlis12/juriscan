@@ -74,6 +74,7 @@ model VeilleAlerte {
 
   // Relations
   fichesDepartements VeilleFiche[] // Déclinaison de l'alerte par département
+  journaux           VeilleJournal[] // Traçabilité SCD2 (consultable : /dashboard/historique)
 }
 
 // 4. LA DÉCLINAISON PAR ONGLET DE DIRECTION (Gère le traitement de conformité)
@@ -92,12 +93,23 @@ model VeilleFiche {
   preuveFichierNom    String? // Nom d'origine du document de preuve
   preuveFichierMime   String? // Type MIME (application/pdf, image/…)
   preuveFichierDonnees String? @db.Text // Contenu base64 (sans préfixe data:)
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
+  // --- SCD Type 2 : seule la ligne isCurrent est affichée / modifiée.
+  // Chaque modification fige l'ancienne image dans VeilleFicheVersion puis
+  // incrémente version (Dataverse : colonnes validFrom/validTo/isCurrent).
+  version         Int             @default(1)
+  validFrom       DateTime        @default(now())
+  validTo         DateTime?
+  isCurrent       Boolean         @default(true)
+  modifiedByBU    DepartementCode?
+  modifiedByEmail String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
 
   // Relations
   alerte              VeilleAlerte   @relation(fields: [alerteId], references: [id], onDelete: Cascade)
   actionsAmelioration VeilleAction[] // Les lignes d'actions d'améliorations rattachées
+  versions            VeilleFicheVersion[]
+  journaux            VeilleJournal[]
 }
 
 // 5. SUIVI DES ACTIONS D'AMÉLIORATION (Délai, Taux, Resp)
@@ -108,9 +120,88 @@ model VeilleAction {
   responsableId   String? // Resp. des actions de mise en conformité
   delai           DateTime? // Délai
   tauxAvancement  Float     @default(0.0) // Taux d'avancement (%)
+  // --- SCD Type 2 (même principe que VeilleFiche).
+  version         Int             @default(1)
+  validFrom       DateTime        @default(now())
+  validTo         DateTime?
+  isCurrent       Boolean         @default(true)
+  modifiedByBU    DepartementCode?
+  modifiedByEmail String?
   createdAt       DateTime  @default(now())
 
   // Relations
   fiche       VeilleFiche @relation(fields: [ficheId], references: [id], onDelete: Cascade)
   responsable User?       @relation("ResponsableAction", fields: [responsableId], references: [id])
+  versions    VeilleActionVersion[]
+}
+
+// 6. SCD TYPE 2 — VERSIONS FIGÉES (snapshots avant chaque modification).
+// Dataverse : tables d'historique VeilleFicheVersion / VeilleActionVersion
+// (colonnes validFrom/validTo/version, relation lookup vers la fiche courante).
+model VeilleFicheVersion {
+  id                String           @id @default(uuid())
+  ficheId           String
+  version           Int
+  validFrom         DateTime
+  validTo           DateTime
+  departement       DepartementCode
+  statutConformite  ConformiteStatut
+  fluxStatut        FluxStatut
+  actionsExistantes String?          @db.Text
+  preuvesExistantes String?          @db.Text
+  preuveDifferee    String?          @db.Text
+  preuveFichierNom  String?
+  modifiedByBU      DepartementCode?
+  modifiedByEmail   String?
+  motif             String?
+  createdAt         DateTime         @default(now())
+
+  fiche VeilleFiche @relation(fields: [ficheId], references: [id], onDelete: Cascade)
+
+  @@index([ficheId, version])
+}
+
+model VeilleActionVersion {
+  id             String    @id @default(uuid())
+  actionId       String
+  ficheId        String
+  version        Int
+  validFrom      DateTime
+  validTo        DateTime
+  libelleAction  String    @db.Text
+  delai          DateTime?
+  tauxAvancement Float
+  modifiedByBU   DepartementCode?
+  modifiedByEmail String?
+  motif          String?
+  createdAt      DateTime  @default(now())
+
+  action VeilleAction @relation(fields: [actionId], references: [id], onDelete: Cascade)
+
+  @@index([actionId, version])
+  @@index([ficheId, createdAt])
+}
+
+// 7. JOURNAL CONSULTABLE (qui / quoi / quand / par qui).
+// Dataverse : table personnalisée VeilleJournal (lecture Power Pages) +
+// Auditing natif en complément ; `champsModifies` = JSON des champs touchés.
+model VeilleJournal {
+  id             String           @id @default(uuid())
+  alerteId       String?
+  ficheId        String?
+  actionId       String?
+  entite         String // ALERTE | FICHE | ACTION
+  action         String // CREATION | VALIDATION_JURIDIQUE | APPROBATION_BU | REJET_BU | RENVOI_BU | MODIFICATION_* | REASSIGNATION
+  buAuteur       DepartementCode?
+  emailAuteur    String?
+  details        String?          @db.Text
+  champsModifies String? // JSON : ["statutConformite","tauxAvancement"]
+  createdAt      DateTime         @default(now())
+
+  alerte VeilleAlerte? @relation(fields: [alerteId], references: [id], onDelete: Cascade)
+  fiche  VeilleFiche?  @relation(fields: [ficheId], references: [id], onDelete: Cascade)
+
+  @@index([ficheId, createdAt])
+  @@index([alerteId, createdAt])
+  @@index([createdAt])
 }

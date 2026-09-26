@@ -10,6 +10,8 @@ import {
   creerAlerteVierge,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
+import { estJuridique, peutCreerAlerte } from "@/domain/acces";
+import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 
 type ModeSaisie = "auto" | "manuel";
 
@@ -63,6 +65,7 @@ function fichierVersBase64Pur(f: File): Promise<string> {
 
 export default function NouvelleAlertePage() {
   const router = useRouter();
+  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
   const inputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [file, setFile] = useState<File | null>(null);
@@ -192,6 +195,10 @@ export default function NouvelleAlertePage() {
 
   async function enregistrerFiche() {
     if (!resultat) return;
+    if (!peutCreerAlerte(buConnectee)) {
+      setErreur(`Création / assignation : réservée au juridique (vous êtes ${buConnectee}). Basculez la BU connectée en haut.`);
+      return;
+    }
     if (resultat.departementsResponsables.length === 0) {
       setErreur("Cochez au moins une BU responsable avant d'enregistrer.");
       return;
@@ -202,12 +209,12 @@ export default function NouvelleAlertePage() {
       // Persistant : texte + BU cochées → Prisma (Alerte + une Fiche par BU).
       const reponse = await fetch("/api/sauvegarde", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(resultat),
+        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        body: JSON.stringify({ ...resultat, buConnectee, emailConnecte }),
       });
-      const payload = (await reponse.json()) as { success?: boolean; error?: string };
-      if (!reponse.ok || !payload.success) {
-        setErreur(payload.error || "Échec de l'enregistrement en base.");
+      const payload = (await reponse.json().catch(() => null)) as { success?: boolean; error?: string } | null;
+      if (!reponse.ok || !payload?.success) {
+        setErreur(payload?.error || "Échec de l'enregistrement en base.");
         return;
       }
       // Redirection opérationnelle : la fiche rejoint l'onglet de sa direction.
@@ -257,12 +264,15 @@ export default function NouvelleAlertePage() {
               </p>
             </div>
           </div>
-          <Link
-            href="/dashboard"
-            className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
-          >
-            ← Retour tableau de bord
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <SelecteurBUConnectee />
+            <Link
+              href="/dashboard"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
+            >
+              ← Retour tableau de bord
+            </Link>
+          </div>
         </div>
       </header>
 
@@ -591,10 +601,17 @@ export default function NouvelleAlertePage() {
                 </button>
               </div>
 
+              {!estJuridique(buConnectee) && (
+                <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+                  🔒 Assignation réservée au juridique — vous êtes connecté en {buConnectee}. Basculez la BU en haut vers CENTRAL_VRG / DJ pour enregistrer.
+                </p>
+              )}
+
               <button
                 type="button"
                 onClick={enregistrerFiche}
                 disabled={saving}
+                title={estJuridique(buConnectee) ? "Assigner aux BU (tracé SCD2)" : "Réservé au juridique"}
                 className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Enregistrement en cours…" : "💾 Enregistrer la Fiche de Veille"}
