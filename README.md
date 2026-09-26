@@ -1,36 +1,168 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# AGL — JuriScan AI
 
-## Getting Started
+Veille réglementaire AGL : l'IA extrait les textes (PDF / image), la **centrale**
+assigne aux BU, chaque **BU pilote sa conformité** en vase clos, et **chaque
+modification est tracée** (SCD type 2, historique consultable).
 
-First, run the development server:
+Prototype fonctionnel **Next.js + Tailwind v4 + Prisma/PostgreSQL**, pensé dès la
+première ligne pour une migration native vers **Microsoft Power Pages** et
+**Dataverse** (logique métier découplée, schéma portable, mapping documenté —
+voir `src/lib/dataverse/tables.ts`).
+
+## Fonctionnalités
+
+- **Pilotage juridique** (`/dashboard`) : filtres BU / date / type / workflow +
+  recherche, KPI, texte groupés par `numeroOrdre`, taux moyen et **pourcentage de
+  chaque BU** dans le graphique « Niveau de conformité par texte » (détail
+  déplié sous la moyenne pour les textes multi-BU).
+- **Analyse IA** (`/dashboard/nouvelle-alerte`) : dépôt PDF/image → extraction
+  (Gemini, repli simulation sans clé) ou saisie manuelle → **assignation
+  multi-BU** (un texte → une fiche par BU cochée).
+- **Workflow à double validation** : `ATTENTE_VALIDATION_JURIDIQUE` →
+  `ATTENTE_APPROBATION_METIER` → `APPROUVE_METIER` | `REJETE_METIER`
+  (approbations BU, rejets à retraiter par la centrale).
+- **Cloisonnement strict par BU** : une BU ne modifie que ses assignations
+  (DJ incluse, sans exception) ; seule la centrale (`CENTRAL_VRG`) pilote le
+  flux. Matrice appliquée côté UI **et** API (401/403). Voir § Accès.
+- **Traçabilité SCD type 2** : versions figées (`Veille*Version`) + journal
+  lisible (`VeilleJournal`), consultable dans `/dashboard/historique` et sur
+  chaque fiche. Voir § Historique.
+- **Données démo visibles** : 30 fiches + 5 textes multi-BU (2–3 BU : `AGL-2026-031`
+  à `035`) et historique simulé aligné sur le workflow (badges **démo**/**SQL**).
+- **Identité AGL** : logo officiel (`public/logo-agl.png`, fond `#1C3359` —
+  fusionne avec les en-têtes `bg-brand-blue` pleins), couleurs `brand-blue`
+  `#1C3359` / `brand-gold` `#B6AD6E` (`src/app/globals.css`).
+
+## Stack
+
+Next.js 16 (App Router) · React 19 · Tailwind v4 · Prisma 6 + PostgreSQL ·
+`ai` + `@ai-sdk/google` (Gemini) · TypeScript strict · ESLint.
+
+## Démarrage
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+npm install
+cp .env.example .env   # renseigner DATABASE_URL (+ GOOGLE_GENERATIVE_AI_API_KEY pour l'OCR réel)
+npm run db:push        # crée le schéma (7 tables) — ou : npm run db:migrate
+npm run dev            # http://localhost:3000 → redirige vers /dashboard
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+| Script | Rôle |
+|---|---|
+| `npm run dev` | Développement local |
+| `npm run build` | `prisma generate && next build` — **obligatoire avant tout commit/push** |
+| `npm run start` | Serveur de production |
+| `npm run lint` | ESLint |
+| `npm run db:generate` / `db:push` / `db:migrate` / `db:studio` | Client Prisma / schéma / migrations / explorateur |
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Sans `DATABASE_URL` (ou sans clé Gemini), l'appli fonctionne en **mode démo** :
+mocks visibles + historique simulé, repli silencieux des appels SQL.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+> Règle projet (`AGENTS.md`) : jamais de commit si `npm run build` échoue ;
+> commits en français préfixés par périmètre (`bu: …`, `ui: …`, `db: …`) ;
+> jamais de secrets versionnés (`.env` ignoré).
 
-## Learn More
+## Structure
 
-To learn more about Next.js, take a look at the following resources:
+```
+src/
+  app/
+    page.tsx                    # racine → redirect /dashboard
+    layout.tsx                  # layout + métadonnées
+    globals.css                 # Tailwind v4, @theme brand-blue/brand-gold
+    api/
+      analyse/route.ts          # POST extraction IA (Gemini / simulation)
+      veille/route.ts           # POST création (centrale) · GET liste
+      veille/[id]/route.ts      # GET fiche · PUT édition (groupes) · PATCH workflow/pilotage
+      veille/[id]/historique/route.ts  # GET journal + versions d'une fiche
+      sauvegarde/route.ts       # POST création (centrale, formulaire nouvelle-alerte)
+      historique/route.ts       # GET journal global (?ficheId=&alerteId=&bu=&action=&take=)
+    dashboard/
+      page.tsx                  # pilotage : filtres, KPI, graphique par BU, tableau groupé
+      nouvelle-alerte/page.tsx  # analyse IA + assignation multi-BU (centrale)
+      approbations/page.tsx     # file d'approbation BU (cloisonnée)
+      rejets/page.tsx           # rejets à retraiter (centrale)
+      alertes/[id]/page.tsx     # modification fiche (droits champ par champ + historique)
+      historique/page.tsx       # journal consultable (filtres + badges démo/SQL)
+  components/
+    ContexteBU.tsx              # BU connectée (localStorage + event même-onglet) + sélecteur
+    LogoAGL.tsx                 # logo officiel (next/image)
+    PreuveFichierInput.tsx      # pièce jointe preuve (PDF/image ≤ 8 Mo, base64)
+  data/
+    veille-mock.ts              # 30 fiches + 5 textes multi-BU (AGL-2026-031 à 035)
+    historique-demo.ts          # journal simulé déterministe (aligné FLUX_DEMO)
+  domain/                       # pur, sans Next.js/Prisma — référence portable Dataverse
+    veille.ts                   # types, statuts, workflow, BU
+    acces.ts                    # MATRICE D'ACCÈS (centrale vs BU — DJ cloisonnée)
+    historique.ts               # entités/actions tracées SCD2, type JournalEntree
+    nouvelle-alerte.ts          # 21 colonnes, formulaire vierge
+  lib/                          # serveur (Prisma)
+    prisma.ts                   # singleton Prisma
+    acces.ts                    # auteur requête (en-têtes x-bu-connectee → futur JWT Entra ID)
+    historique.ts               # versionnerFiche/Action + journaliser (transactions SCD2)
+    veille-save.ts              # création Alerte + N fiches + journal CREATION
+    dataverse/tables.ts         # MAPPING DATAVERSE (7 tables, OptionSets, relations, rôles)
+prisma/schema.prisma            # 7 modèles : User, VeilleAlerte, VeilleFiche (+SCD2),
+                                # VeilleAction (+SCD2), VeilleFicheVersion,
+                                # VeilleActionVersion, VeilleJournal
+public/logo-agl.png             # logo officiel AGL (fond #1C3359)
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Accès — cloisonnement strict par BU
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Sélecteur « Connecté : » dans chaque en-tête (prototype `localStorage`, propagé
+dans le même onglet ; remplacé par **Entra ID / Web Roles** côté Microsoft —
+l'API lira alors le JWT via `src/lib/acces.ts`).
 
-## Deploy on Vercel
+| Action | Centrale (`CENTRAL_VRG`) | BU propriétaire | Autre BU |
+|---|---|---|---|
+| Créer / assigner des BU | ✅ | ❌ | ❌ |
+| Modifier le texte source (12 champs) | ✅ | ❌ (figé) | ❌ |
+| Réassigner vers une autre BU | ✅ | ❌ | ❌ |
+| Valider vers métier / renvoyer un rejet | ✅ | ❌ | ❌ |
+| Ouvrir la fiche en modification | ✅ (texte + réassignation) | ✅ (conformité) | 🔒 lecture seule |
+| Approuver / rejeter son assignation | ❌ (aucune fiche) | ✅ | ❌ |
+| Conformité : statut, preuves, document, action, responsable, délai, taux | ❌ | ✅ | ❌ |
+| Lecture + historique | ✅ | ✅ | ✅ |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+Référence : `src/domain/acces.ts` (`peutOuvrirFiche`, `peutPiloterConformite`,
+`peutCreerAlerte`, `peutValiderVersMetier`, `peutGererRejet`,
+`peutStatuerAssignation`). L'API renvoie `401` (BU manquante) / `403` (interdit,
+ex. *« Réservé aux membres DRH (vous êtes DJ) »*) ; le PUT compare les groupes
+avant/après et ne versionne que les groupes autorisés et réellement touchés.
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+## Historique — SCD type 2
+
+- Tables courantes : `version`, `validFrom`, `validTo`, `isCurrent`,
+  `modifiedByBU`, `modifiedByEmail` (seule la ligne `isCurrent` s'affiche).
+- Chaque PUT/PATCH fige l'ancienne image dans `VeilleFicheVersion` /
+  `VeilleActionVersion` (`validTo = now`, `version` incrémentée), en transaction.
+- Chaque modification écrit `VeilleJournal` : `entite` (ALERTE/FICHE/ACTION),
+  `action` (`CREATION`, `VALIDATION_JURIDIQUE`, `APPROBATION_BU`, `REJET_BU`,
+  `RENVOI_BU`, `MODIFICATION_*`, `REASSIGNATION`), `buAuteur`, `emailAuteur`,
+  `details`, `champsModifies` (JSON).
+- Consultation : `/dashboard/historique` (filtres BU/action/recherche,
+  `?fiche=` pour une fiche), section « Historique » de chaque fiche,
+  `GET /api/historique` et `GET /api/veille/[id]/historique`.
+
+## Migration Microsoft (Power Pages / Dataverse)
+
+- Recréer les **7 tables** + 3 OptionSets (`DepartementCode`,
+  `ConformiteStatut`, `FluxStatut`) d'après `src/lib/dataverse/tables.ts`
+  (`DATAVERSE_TABLES`, `DATAVERSE_OPTION_SETS`, `DATAVERSE_RELATIONS`).
+- Activer l'**Auditing natif** + recréer `VeilleJournal` (lecture Power Pages) et
+  les tables `*Version` (colonnes `validFrom`/`validTo`/`isCurrent`/`version`).
+- Sécurité : 1 Business Unit + 1 Team par BU (+ BU « Centrale ») ; rôle
+  **JuriScan BU** (lecture globale, écriture si `departement` == équipe — DJ
+  incluse) ; rôle **JuriScan Centrale** (création, assignation, flux,
+  réassignation ; écriture bloquée sur la conformité BU).
+- Authentification : remplacer le sélecteur prototype par l'utilisateur
+  **Entra ID** (Web Roles → BU) ; `src/lib/acces.ts` (`lireAuteur`) est le seul
+  point à basculer (en-têtes `x-bu-connectee`/`x-user-email` → JWT).
+- Logo : téléverser `public/logo-agl.png` comme « Site Logo » du portail
+  (Content Snippet `Site Logo Url`) ; en-têtes portail en `#1C3359` plein pour
+  la fusion (voir `src/components/LogoAGL.tsx`).
+
+## Support
+
+`JuriScan-AI-Presentation.pptx` (racine) : présentation du prototype.

@@ -2,10 +2,17 @@
  * JuriScan AI — Couche domaine (découplée de Next.js / Prisma).
  *
  * Ces types sont la référence métier portable vers Microsoft Dataverse :
- * - `User` → table Dataverse `User` (acteurs par département / onglet)
+ * - `User` → table Dataverse `User` (acteurs par département)
  * - `VeilleAlerte` → table maîtresse `VeilleAlerte` (alerte de veille + `propositionBU` IA)
- * - `VeilleFiche` → table `VeilleFiche` (déclinaison par direction + `fluxStatut` workflow)
- * - `VeilleAction` → table `VeilleAction` (plan d'actions d'amélioration)
+ * - `VeilleFiche` → table `VeilleFiche` (déclinaison par BU + `fluxStatut` workflow
+ *   + colonnes SCD2 `version` / `validFrom` / `validTo` / `isCurrent` / `modifiedByBU`)
+ * - `VeilleAction` → table `VeilleAction` (plan d'actions + colonnes SCD2)
+ * - `VeilleFicheVersion` / `VeilleActionVersion` → tables d'historique SCD2
+ *   (snapshots figés avant chaque modification)
+ * - `VeilleJournal` → table `VeilleJournal` (journal lisible : qui / quoi /
+ *   quand / par qui, consulté par `/dashboard/historique`)
+ * - Accès strict : voir `src/domain/acces.ts` (centrale vs BU, DJ cloisonnée).
+ * - Historique : voir `src/domain/historique.ts` (actions tracées SCD2).
  *
  * Conventions Dataverse-ready : noms de tables/champs en anglais,
  * PascalCase pour les entités, camelCase pour les attributs.

@@ -1,10 +1,12 @@
 /**
  * JuriScan AI — Moteur d'enregistrement partagé (Prisma, serveur uniquement).
  *
- * Utilisé par POST /api/veille et POST /api/sauvegarde : insère les 21
- * colonnes validées du formulaire → `VeilleAlerte.create` (12 champs) +
- * N `VeilleFiche.create` (une fiche par BU cochée — un texte de loi peut
- * concerner plusieurs BU) + `VeilleAction.create` optionnelle par fiche.
+ * Utilisé par POST /api/veille et POST /api/sauvegarde (centrale uniquement) :
+ * insère les 21 colonnes validées du formulaire → `VeilleAlerte.create`
+ * (12 champs) + N `VeilleFiche.create` (une fiche par BU cochée — un texte
+ * de loi peut concerner plusieurs BU) + `VeilleAction.create` optionnelle
+ * par fiche. Chaque fiche créée écrit aussi une entrée `VeilleJournal`
+ * (action CREATION, auteur SCD2) et porte `modifiedByBU` / `modifiedByEmail`.
  * Anti-doublon `numeroOrdre` avec suffixe unique (un essai).
  */
 
