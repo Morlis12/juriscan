@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { DepartementCode, NatureTexte } from "@/domain/veille";
@@ -17,6 +17,59 @@ import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/component
 import { LogoAGL } from "@/components/LogoAGL";
 
 type ModeSaisie = "auto" | "manuel";
+
+/** Clé de persistance du travail en cours (onglets auto/manuel). */
+const CLE_BROUILLON_NA = "juriscan-nouvelle-alerte-brouillon";
+
+/** Brouillon d'un onglet : actes, position, source, fichier d'origine. */
+interface BrouillonNA {
+  actes: ActeAnalyse[] | null;
+  indexActe: number;
+  meta: ApiAnalyseMeta | null;
+  source: "gemini" | "simulation" | null;
+  fileName: string | null;
+}
+
+const brouillonVide = (): BrouillonNA => ({
+  actes: null,
+  indexActe: 0,
+  meta: null,
+  source: null,
+  fileName: null,
+});
+
+/** Relit le travail en cours (un onglet ne perd plus rien en revenant). */
+function chargerBrouillons(): {
+  mode: ModeSaisie;
+  auto: BrouillonNA;
+  manuel: BrouillonNA;
+} {
+  const init = { mode: "auto" as ModeSaisie, auto: brouillonVide(), manuel: brouillonVide() };
+  try {
+    if (typeof window === "undefined") return init;
+    const brut = window.localStorage.getItem(CLE_BROUILLON_NA);
+    if (!brut) return init;
+    const p = JSON.parse(brut) as Partial<Record<ModeSaisie, Partial<BrouillonNA>>> & {
+      mode?: unknown;
+    };
+    for (const m of ["auto", "manuel"] as ModeSaisie[]) {
+      const b = p[m];
+      if (b && Array.isArray(b.actes)) {
+        init[m] = {
+          actes: b.actes as ActeAnalyse[],
+          indexActe: typeof b.indexActe === "number" ? b.indexActe : 0,
+          meta: (b.meta as ApiAnalyseMeta | null) ?? null,
+          source: b.source === "gemini" || b.source === "simulation" ? b.source : null,
+          fileName: typeof b.fileName === "string" ? b.fileName : null,
+        };
+      }
+    }
+    if (p.mode === "auto" || p.mode === "manuel") init.mode = p.mode;
+  } catch {
+    /* stockage indisponible ou corrompu : on repart de zéro */
+  }
+  return init;
+}
 
 /** Un acte du tableau `{ actes }` renvoyé par POST /api/analyse (noms existants). */
 interface ApiAnalyseActe {
@@ -90,17 +143,51 @@ export default function NouvelleAlertePage() {
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  // Lot multi-actes : « 1 document déposé » = « N textes extraits » (Acte X / N).
-  const [actes, setActes] = useState<ActeAnalyse[] | null>(null);
-  const [indexActe, setIndexActe] = useState(0);
-  const [source, setSource] = useState<"gemini" | "simulation" | null>(null);
-  const [meta, setMeta] = useState<ApiAnalyseMeta | null>(null);
+  // Travail en cours conservé : chaque onglet (auto/manuel) garde son brouillon
+  // (actes, position, source, fichier) dans localStorage — basculer d'onglet ou
+  // quitter la page ne fait plus rien perdre, on reprend où on en était.
+  const [mode, setMode] = useState<ModeSaisie>("auto");
   /** Analyse partielle (tranches/objets perdus) : affiché en ambre, les actes restent. */
   const [avertissement, setAvertissement] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [mode, setMode] = useState<ModeSaisie>("auto");
+  const [brouillons, setBrouillons] = useState<Record<ModeSaisie, BrouillonNA>>(
+    () => ({ auto: brouillonVide(), manuel: brouillonVide() }),
+  );
+  // Persiste après restauration uniquement (sinon l'état vide initial écraserait
+  // le brouillon enregistré avant sa relecture).
+  const restaure = useRef(false);
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => {
+      const r = chargerBrouillons();
+      // Saisie manuelle retrouvée vide : un acte vierge prêt au clavier.
+      const manuel =
+        r.mode === "manuel" && !r.manuel.actes
+          ? { ...r.manuel, actes: numeroterActes([creerAlerteVierge()]) }
+          : r.manuel;
+      setBrouillons({ auto: r.auto, manuel });
+      setMode(r.mode);
+      restaure.current = true;
+    });
+    return () => cancelAnimationFrame(raf);
+  }, []);
+  useEffect(() => {
+    if (!restaure.current) return;
+    try {
+      localStorage.setItem(
+        CLE_BROUILLON_NA,
+        JSON.stringify({ mode, auto: brouillons.auto, manuel: brouillons.manuel }),
+      );
+    } catch {
+      /* stockage indisponible ou plein : la session continue en mémoire */
+    }
+  }, [mode, brouillons]);
 
-  /** Acte affiché (« Acte X / N ») + compteurs du lot pour l'enregistrement. */
+  /** Brouillon de l'onglet affiché + dérivés (« Acte X / N », compteurs). */
+  const brouillon = brouillons[mode];
+  const actes = brouillon.actes;
+  const indexActe = brouillon.indexActe;
+  const meta = brouillon.meta;
+  const source = brouillon.source;
   const acte =
     actes && actes.length > 0 ? actes[Math.min(indexActe, actes.length - 1)] : null;
   const nbAvecBU = actes
@@ -110,10 +197,47 @@ export default function NouvelleAlertePage() {
     ? actes.reduce((s, a) => s + a.departementsResponsables.length, 0)
     : 0;
 
+  /** Patch du brouillon de l'onglet affiché (ou ciblé). */
+  function majBrouillon(patch: Partial<BrouillonNA>, cible: ModeSaisie = mode) {
+    setBrouillons((prev) => ({ ...prev, [cible]: { ...prev[cible], ...patch } }));
+  }
+  type Maj<T> = T | ((prev: T) => T);
+  function resoudre<T>(v: Maj<T>, prev: T): T {
+    return typeof v === "function" ? (v as (p: T) => T)(prev) : v;
+  }
+  function setActes(v: Maj<ActeAnalyse[] | null>) {
+    const cible = mode;
+    setBrouillons((prev) => ({
+      ...prev,
+      [cible]: { ...prev[cible], actes: resoudre(v, prev[cible].actes) },
+    }));
+  }
+  function setIndexActe(v: Maj<number>) {
+    const cible = mode;
+    setBrouillons((prev) => ({
+      ...prev,
+      [cible]: { ...prev[cible], indexActe: resoudre(v, prev[cible].indexActe) },
+    }));
+  }
+  function setMeta(v: Maj<ApiAnalyseMeta | null>) {
+    const cible = mode;
+    setBrouillons((prev) => ({
+      ...prev,
+      [cible]: { ...prev[cible], meta: resoudre(v, prev[cible].meta) },
+    }));
+  }
+  function setSource(v: Maj<"gemini" | "simulation" | null>) {
+    const cible = mode;
+    setBrouillons((prev) => ({
+      ...prev,
+      [cible]: { ...prev[cible], source: resoudre(v, prev[cible].source) },
+    }));
+  }
+
   /** Aperçu du panneau « Texte extrait » pour l'acte affiché. */
   function apercuActe(a: ActeAnalyse): string {
     return [
-      `—— Analyse IA JuriScan : ${file?.name ?? "saisie manuelle"} ——`,
+      `—— Analyse IA JuriScan : ${file?.name ?? brouillon.fileName ?? "saisie manuelle"} ——`,
       "",
       `Acte ${a.idActe + 1}/${actes?.length ?? 1} · ${a.numeroOrdre || "N° à attribuer"}`,
       `Nature déduite : ${a.natureTexte || "—"}`,
@@ -130,10 +254,7 @@ export default function NouvelleAlertePage() {
   }
 
   function resetActes() {
-    setActes(null);
-    setIndexActe(0);
-    setSource(null);
-    setMeta(null);
+    majBrouillon({ actes: null, indexActe: 0, meta: null, source: null, fileName: null });
     setMessage(null);
     setAvertissement(null);
   }
@@ -141,10 +262,14 @@ export default function NouvelleAlertePage() {
   function choisirMode(m: ModeSaisie) {
     setMode(m);
     setErreur(null);
-    resetActes();
-    // Saisie libre : un seul acte, texte + BU, prêt au clavier.
+    // Chaque onglet garde son travail en cours : rien n'est effacé en basculant.
+    // Saisie libre jamais commencée : un seul acte vierge, prêt au clavier.
     if (m === "manuel") {
-      setActes(numeroterActes([creerAlerteVierge()]));
+      setBrouillons((prev) =>
+        prev.manuel.actes
+          ? prev
+          : { ...prev, manuel: { ...prev.manuel, actes: numeroterActes([creerAlerteVierge()]) } },
+      );
     }
   }
 
@@ -162,6 +287,9 @@ export default function NouvelleAlertePage() {
     }
     setFile(f);
     resetActes();
+    // Nom conservé dans le brouillon : en revenant sans le fichier, on sait
+    // lequel recharger pour relancer l'analyse (les actes restent modifiables).
+    majBrouillon({ fileName: f.name });
   }
 
   /** Charge un fichier d'exemple intégré au projet (JO n°53) pour tester l'analyse. */
@@ -319,6 +447,8 @@ export default function NouvelleAlertePage() {
         );
         return;
       }
+      // Lot entièrement enregistré : on vide le brouillon (anti-doublon au retour).
+      majBrouillon({ actes: null, indexActe: 0, meta: null, source: null, fileName: null });
       // Redirection opérationnelle : les fiches rejoignent leurs BU.
       router.push("/dashboard");
     } catch (e) {
@@ -524,13 +654,22 @@ export default function NouvelleAlertePage() {
                   type="button"
                   onClick={() => {
                     setFile(null);
-                    resetActes();
+                    majBrouillon({ fileName: null });
                   }}
                   className="shrink-0 rounded-full px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
                 >
                   Retirer
                 </button>
               </div>
+            )}
+
+            {!file && brouillon.fileName && (
+              <p className="mt-3 rounded-lg bg-brand-blue/5 px-3 py-2 text-xs text-brand-blue">
+                Document précédent :{" "}
+                <span className="font-semibold">{brouillon.fileName}</span> — rechargez-le
+                ci-dessus pour relancer l&apos;analyse. Vos actes et BU cochées sont
+                conservés, vous pouvez continuer et enregistrer.
+              </p>
             )}
 
             {erreur && (

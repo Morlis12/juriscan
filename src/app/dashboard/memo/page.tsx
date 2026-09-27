@@ -2,12 +2,63 @@ import Link from "next/link";
 import { LogoAGL } from "@/components/LogoAGL";
 
 /**
- * JuriScan AI — Mémo d'utilisation (guide structuré, langage utilisateur).
- * Explique les indicateurs, le workflow, les droits par BU, les dates et
- * l'historique. Accessible via l'icône « ⓘ Mémo » de chaque en-tête.
+ * JuriScan AI — Mémo d'utilisation (guide complet, langage utilisateur).
+ * Couvre toutes les fonctions : nouvelle alerte multi-actes, reprise du
+ * travail en cours, indicateurs, workflow, droits par BU, pertinence transit,
+ * dates, historique, approbations et rejets.
+ * Accessible via l'icône « ⓘ Mémo » de chaque en-tête.
  */
 
 const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
+  {
+    titre: "Nouvelle alerte : du dépôt aux actes",
+    contenu: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Déposez un PDF ou une image (glisser-déposer ou parcours), ou utilisez
+          les boutons « Tester avec l&apos;exemple » (JO n°53 intégré), puis
+          « Lancer l&apos;Analyse IA ». La saisie manuelle reste possible.
+        </li>
+        <li>
+          <strong>1 document = N actes</strong> : un Journal Officiel contient
+          des dizaines d&apos;actes distincts — l&apos;IA les extrait un par un,
+          sans les fusionner.
+        </li>
+        <li>
+          Naviguez avec <strong>« Acte X / N »</strong> (←/→ ou liste) : nature,
+          référence complète, <strong>articles</strong>, résumé,{" "}
+          <strong>texte brut transcrit</strong>, pertinence — tout est vérifiable
+          et modifiable avant assignation.
+        </li>
+        <li>
+          « Valider » passe à l&apos;acte suivant ; « Enregistrer » crée{" "}
+          <strong>un N° d&apos;ordre par acte</strong> (-01, -02, …). Les actes
+          sans BU cochée sont ignorés (signalés à l&apos;écran).
+        </li>
+      </ul>
+    ),
+  },
+  {
+    titre: "Reprendre où vous étiez (travail conservé)",
+    contenu: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Chaque onglet (<strong>Automatique / Manuel</strong>) garde son
+          travail en cours : basculer d&apos;onglet ou quitter la page ne fait
+          plus rien perdre — tout est retrouvé au retour.
+        </li>
+        <li>
+          Le document lui-même ne peut pas être conservé : rechargez-le pour
+          relancer une analyse (vos actes et BU cochées restent modifiables et
+          enregistrables sans lui).
+        </li>
+        <li>
+          Après un enregistrement complet, le brouillon est vidé pour éviter
+          tout doublon en revenant sur la page.
+        </li>
+      </ul>
+    ),
+  },
   {
     titre: "Les 3 indicateurs du pilotage",
     contenu: (
@@ -75,7 +126,8 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
         <li>Les textes sont regroupés par N° d&apos;ordre (un texte → N fiches BU).</li>
         <li>
           <strong>Dernière modif</strong> : date de l&apos;état affiché
-          aujourd&apos;hui (plus récente des fiches du texte).
+          aujourd&apos;hui (plus récente des fiches du texte) ; chaque BU
+          affiche aussi la sienne dans le détail.
         </li>
         <li>
           Cliquez un texte pour voir <strong>chaque BU</strong> : statut,
@@ -117,6 +169,26 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
     ),
   },
   {
+    titre: "La pertinence transit (Directe / Indirecte / Hors périmètre)",
+    contenu: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          <strong>Directe</strong> : le texte régit une activité d&apos;AGL CI
+          (transport, transit, douane, port, foncier d&apos;exploitation).
+        </li>
+        <li>
+          <strong>Indirecte</strong> : il peut affecter AGL CI sans la viser
+          (ex : réglementation générant du fret, urbanisme d&apos;une zone avec
+          installations).
+        </li>
+        <li>
+          <strong>Hors périmètre</strong> : aucun lien avec l&apos;activité
+          (⛔ aucune BU recommandée) — la centrale reste seule décideuse.
+        </li>
+      </ul>
+    ),
+  },
+  {
     titre: "Les dates affichées",
     contenu: (
       <ul className="list-disc space-y-1 pl-5">
@@ -152,24 +224,6 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
         </li>
         <li>Chaque fiche a aussi son historique en bas de sa page « Modifier ».</li>
       </ul>
-    ),
-  },
-  {
-    titre: "Nouvelle alerte : les actes un par un",
-    contenu: (
-      <ol className="list-decimal space-y-1 pl-5">
-        <li>Analyse automatique (dépôt PDF/image) ou saisie manuelle libre.</li>
-        <li>
-          Un document = N actes détectés : naviguez avec « Acte X / N »,
-          vérifiez chaque acte (nature, référence, articles, texte brut) puis
-          cochez les BU concernées.
-        </li>
-        <li>
-          « Valider » fait avancer vers l&apos;acte suivant ; « Enregistrer »
-          crée un N° d&apos;ordre par acte (-01, -02, …). Les actes sans BU
-          (dont « Hors périmètre ») sont ignorés.
-        </li>
-      </ol>
     ),
   },
   {

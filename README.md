@@ -19,7 +19,9 @@ voir `src/lib/dataverse/tables.ts`).
   extraction (IA, clé requise — pas de mode démo) ou saisie manuelle. « 1 document »
   = « N textes » (un JO = des dizaines d'actes, jamais fusionnés) : navigation
   « Acte X / N », assignation multi-BU **par acte**, enregistrement en N alertes
-  (`<racine>-01`, `-02`, … ; actes sans BU ignorés avec motif). PDF longs découpés
+  (`<racine>-01`, `-02`, … ; actes sans BU ignorés avec motif). Travail conservé :
+  chaque onglet (auto/manuel) garde son brouillon (localStorage) — basculer
+  d'onglet ou quitter la page ne fait plus rien perdre. PDF longs découpés
   en tranches de 5 pages (+1 de chevauchement, fusion/dédoublonnage), sortie JSON
   structurée (schéma zod). Fidélité exigée : articles copiés mot à mot,
   transcription brute complète (`contenu`), références jamais tronquées, rien
