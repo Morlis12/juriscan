@@ -8,7 +8,7 @@ import {
   DEPARTEMENTS,
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
-import { estCentrale, messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
+import { messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
 import { formaterDateFR } from "@/domain/jalons";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
@@ -492,18 +492,11 @@ export default function DashboardPage() {
             </Link>
             <Link
               href="/dashboard/historique"
-              title="Traçabilité SCD2 : chaque modification est consultable ici"
+              title="Chaque modification est consultable ici"
               className="rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
             >
               🕘 Historique
             </Link>
-            <span className="flex items-center gap-2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium">
-              <span className="relative flex h-2.5 w-2.5">
-                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75" />
-                <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500" />
-              </span>
-              SQL synchronisé
-            </span>
           </div>
         </div>
       </header>
@@ -612,26 +605,6 @@ export default function DashboardPage() {
             </p>
           )}
         </section>
-
-        {/* Périmètre — les commandes de page restent uniquement dans l'en-tête. */}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-slate-500">
-            Périmètre : <span className="font-semibold text-brand-blue">{perimetreLabel}</span>
-            {" — "}
-            {groupes.length} texte{groupes.length > 1 ? "s" : ""} · {alertes.length} fiche
-            {alertes.length > 1 ? "s" : ""} BU
-            {" — "}
-            Connecté :{" "}
-            <span className="font-semibold text-brand-blue">
-              {buConnectee}
-              {estCentrale(buConnectee) ? " (centrale : pilote le flux, ne touche pas la conformité BU)" : " (cloisonnée à vos assignations)"}
-            </span>
-            {" — "}
-            <Link href="/dashboard/historique" className="font-semibold text-brand-blue underline decoration-brand-gold decoration-2 underline-offset-2">
-              Consulter l&apos;historique des modifications
-            </Link>
-          </p>
-        </div>
 
         {avertissement && (
           <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800 shadow-sm">
@@ -1014,7 +987,7 @@ export default function DashboardPage() {
                                       )}
                                       <Link
                                         href={`/dashboard/historique?fiche=${encodeURIComponent(f.id)}`}
-                                        title="Consulter l'historique SCD2 de cette fiche"
+                                        title="Consulter l'historique de cette fiche"
                                         onClick={(e) => e.stopPropagation()}
                                         className="rounded-lg border border-slate-200 px-2.5 py-1 text-xs font-semibold text-slate-600 hover:border-brand-gold hover:text-brand-blue"
                                       >

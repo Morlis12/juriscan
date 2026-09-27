@@ -176,7 +176,7 @@ export default function NouvelleAlertePage() {
       setResultat(analyse);
       setTexteExtrait(
         [
-          `—— Analyse JuriScan (Gemini 3.6 Flash) : ${file.name} ——`,
+          `—— Analyse IA JuriScan : ${file.name} ——`,
           "",
           `Nature déduite : ${analyse.natureTexte || "—"}`,
           `Référence : ${analyse.referenceTexte}`,
@@ -530,7 +530,7 @@ export default function NouvelleAlertePage() {
               <Bloc titre="Assignation — BU responsables (une fiche par BU cochée)">
                 {resultat.propositionBU && (
                   <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue sm:col-span-2">
-                    🤖 Gemini 3.6 Flash recommande la BU :{" "}
+                    🤖 L&apos;IA recommande la BU :{" "}
                     <span className="font-bold">{resultat.propositionBU}</span>
                     {" — "}un texte pouvant concerner plusieurs BU, cochez toutes
                     les BU concernées ci-dessous (une fiche part chez chacune).
@@ -610,7 +610,7 @@ export default function NouvelleAlertePage() {
                 type="button"
                 onClick={enregistrerFiche}
                 disabled={saving}
-                title={peutCreerAlerte(buConnectee) ? "Assigner aux BU (tracé SCD2)" : "Réservé à la centrale"}
+                title={peutCreerAlerte(buConnectee) ? "Assigner aux BU" : "Réservé à la centrale"}
                 className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Enregistrement en cours…" : "💾 Enregistrer la Fiche de Veille"}

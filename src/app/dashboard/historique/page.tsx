@@ -94,7 +94,7 @@ function HistoriqueContenu() {
           <div className="flex items-center gap-3">
             <LogoAGL />
             <div>
-              <p className="text-lg font-bold leading-tight">Historique des modifications — SCD2</p>
+              <p className="text-lg font-bold leading-tight">Historique des modifications</p>
               <p className="text-xs text-slate-300">
                 Traçabilité : chaque modification est versionnée et consultable · connecté : {buConnectee}
               </p>
@@ -189,8 +189,9 @@ function HistoriqueContenu() {
             </label>
           </div>
           <p className="mt-2 text-xs text-slate-500">
-            {filtrees.length} entrée{filtrees.length > 1 ? "s" : ""} — SCD2 : version courante (`isCurrent`) +
-            snapshots (`Veille*Version`) + journal lisible (`VeilleJournal`, Dataverse : Auditing + tables dédiées).
+            {filtrees.length} entrée{filtrees.length > 1 ? "s" : ""} — chaque création,
+            validation, approbation, rejet et pilotage est tracé avec sa date, son
+            auteur et le détail des champs modifiés.
           </p>
         </section>
 
@@ -202,8 +203,8 @@ function HistoriqueContenu() {
             <p className="px-5 py-10 text-center text-sm text-slate-400">Chargement de l&apos;historique…</p>
           ) : filtrees.length === 0 ? (
             <p className="px-5 py-10 text-center text-sm text-slate-400">
-              Aucune modification tracée pour ces filtres. Chaque création / validation / approbation /
-              rejet / pilotage BU apparaîtra ici (base requise ; repli silencieux sinon).
+              Aucune modification pour ces filtres. Chaque création / validation / approbation /
+              rejet / pilotage apparaîtra ici.
             </p>
           ) : (
             <ul className="divide-y divide-slate-100">
@@ -213,10 +214,10 @@ function HistoriqueContenu() {
                     <p className="text-sm font-bold text-brand-blue">
                       {HISTORIQUE_ACTION_LABELS[(e.action as HistoriqueAction)] ?? e.action}
                       <span
-                        title={e.id.startsWith("demo-") ? "Historique simulé (données démo, sans base)" : "Historique réel (SCD2, base SQL)"}
+                        title={e.id.startsWith("demo-") ? "Historique simulé (données de démonstration)" : "Historique enregistré"}
                         className={`ml-2 rounded-full px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide ${e.id.startsWith("demo-") ? "bg-amber-100 text-amber-800" : "bg-emerald-100 text-emerald-800"}`}
                       >
-                        {e.id.startsWith("demo-") ? "démo" : "SQL"}
+                        {e.id.startsWith("demo-") ? "démo" : "réel"}
                       </span>
                       {e.numeroOrdre && (
                         <span className="ml-2 font-mono text-xs font-semibold text-slate-500">{e.numeroOrdre}</span>

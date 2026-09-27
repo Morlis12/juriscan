@@ -193,7 +193,7 @@ export default function ModifierAlertePage() {
   const conformiteEditable = proprietaire;
   const lectureSeule = ficheBU !== null && !centrale && !proprietaire;
 
-  // Historique de la fiche : réel (SCD2, SQL) ou simulé (démo, mocks).
+  // Historique de la fiche : enregistré ou simulé (démo, mocks).
   useEffect(() => {
     let actif = true;
     // Démonstration : historique simulé aligné sur le workflow (sans base).
@@ -514,7 +514,7 @@ export default function ModifierAlertePage() {
                 type="button"
                 onClick={enregistrer}
                 disabled={saving || (!!ficheBU && !peutOuvrirFiche(buConnectee, ficheBU))}
-                title={ficheBU && !peutOuvrirFiche(buConnectee, ficheBU) ? messageAccesRefuse(buConnectee, ficheBU) : "Enregistrer (tracé SCD2)"}
+                title={ficheBU && !peutOuvrirFiche(buConnectee, ficheBU) ? messageAccesRefuse(buConnectee, ficheBU) : "Enregistrer"}
                 className="w-full rounded-xl bg-brand-blue px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-brand-blue/90 disabled:cursor-not-allowed disabled:opacity-50"
               >
                 {saving ? "Enregistrement en cours…" : "💾 Enregistrer les Modifications"}
@@ -523,11 +523,11 @@ export default function ModifierAlertePage() {
           </section>
         )}
 
-        {/* Historique de la fiche — réel (SCD2) ou simulé (démo) */}
+        {/* Historique de la fiche */}
         {form && (
           <section className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2 bg-brand-blue px-5 py-3">
-              <h2 className="text-base font-bold text-white">🕘 Historique des modifications (SCD2)</h2>
+              <h2 className="text-base font-bold text-white">🕘 Historique des modifications</h2>
               <Link
                 href={`/dashboard/historique?fiche=${encodeURIComponent(params.id)}`}
                 className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white hover:bg-brand-gold hover:text-brand-blue"
@@ -538,11 +538,11 @@ export default function ModifierAlertePage() {
             <div className="px-5 py-4">
               {!historique ? (
                 <p className="py-2 text-center text-xs text-slate-400">
-                  Chargement de l&apos;historique… (repli silencieux si base absente).
+                  Chargement de l&apos;historique…
                 </p>
               ) : historique.length === 0 ? (
                 <p className="py-2 text-center text-xs text-slate-400">
-                  Aucune modification tracée pour l&apos;instant — chaque enregistrement apparaîtra ici (version SCD2 + journal).
+                  Aucune modification pour l&apos;instant — chaque enregistrement apparaîtra ici.
                 </p>
               ) : (
                 <ul className="space-y-2">
