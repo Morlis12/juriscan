@@ -507,20 +507,20 @@ export default function DashboardPage() {
             >
               🕘 Historique
             </Link>
+            {derniereMaj && (
+              <span
+                title={dureeDepuis(derniereMaj) ? `Il y a ${dureeDepuis(derniereMaj)}` : undefined}
+                className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-200"
+              >
+                Dernière mise à jour :{" "}
+                <span className="font-bold text-white">{formaterDateFR(derniereMaj)}</span>
+              </span>
+            )}
           </div>
         </div>
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-        {derniereMaj && (
-          <p className="text-right text-xs text-slate-500">
-            Dernière mise à jour :{" "}
-            <span className="font-semibold text-brand-blue">
-              {formaterDateFR(derniereMaj)}
-            </span>
-            {dureeDepuis(derniereMaj) ? ` (il y a ${dureeDepuis(derniereMaj)})` : ""}
-          </p>
-        )}
         {/* FILTRES MULTICRITÈRES — pilotage juridique */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
