@@ -9,7 +9,7 @@ import {
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
 import { messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
-import { formaterDateFR } from "@/domain/jalons";
+import { dureeDepuis, formaterDateFR } from "@/domain/jalons";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
@@ -437,6 +437,16 @@ export default function DashboardPage() {
   const perimetreLabel =
     filtreBU === "ALL" ? "Vue générale" : DEPARTEMENTS[filtreBU as DepartementCode];
 
+  /** Dernière mise à jour (haut à droite) : plus récente des fiches affichées. */
+  const derniereMaj = useMemo(() => {
+    const source = alertes.length > 0 ? alertes : toutesAlertes;
+    const dates = source
+      .map((a) => a.derniereModif.slice(0, 10))
+      .filter((d) => d !== "")
+      .sort();
+    return dates.length > 0 ? dates[dates.length - 1] : null;
+  }, [alertes, toutesAlertes]);
+
   const filtresActifs =
     filtreBU !== "ALL" ||
     filtreType !== "ALL" ||
@@ -502,6 +512,15 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
+        {derniereMaj && (
+          <p className="text-right text-xs text-slate-500">
+            Dernière mise à jour :{" "}
+            <span className="font-semibold text-brand-blue">
+              {formaterDateFR(derniereMaj)}
+            </span>
+            {dureeDepuis(derniereMaj) ? ` (il y a ${dureeDepuis(derniereMaj)})` : ""}
+          </p>
+        )}
         {/* FILTRES MULTICRITÈRES — pilotage juridique */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
