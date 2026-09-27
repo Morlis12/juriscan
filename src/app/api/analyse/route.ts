@@ -14,9 +14,12 @@ import { PDFDocument } from "pdf-lib";
  * Modèle métier : « 1 document déposé » = « N textes extraits » (un Journal
  * Officiel contient des dizaines d'actes juridiquement distincts — jamais
  * fusionnés).
- * - PDF > ~10 pages : découpé en tranches de 5 pages avec chevauchement d'1
- *   page (anti-troncature), une extraction par tranche, puis fusion +
- *   dédoublonnage (clé nature|référence|article).
+ * - Contexte métier AGL CI + FILTRE STRICT DE RAPIDITÉ : pages sans rapport
+ *   avec transit/douane/port/AGL ignorées immédiatement (tableau vide admis).
+ * - Champs toujours renseignés : article, libelleVersion, dateEntreeVigueur,
+ *   lienHypertexte (URL exacte lue, jamais inventée) valent « N/A » si rien.
+ * - PDF > ~10 pages : tranches de 5 pages (+1 chevauchement) traitées en
+ *   PARALLÈLE (×3), puis fusion + dédoublonnage (clé nature|référence|article).
  * - Chaque objet est validé (zod, tolérant) ; les invalides sont ignorés.
  * - Mapping schéma IA → colonnes existantes (jamais renommées) :
  *   libelleVersion → libelleApplicable, contenuBrut → contenu,
@@ -121,11 +124,11 @@ function normaliserDate(v: unknown): string {
   return "";
 }
 
-/** "N/A" (et variantes) → chaîne vide ; le reste est conservé tel quel. */
-function normaliserArticle(v: unknown): string {
-  if (typeof v !== "string") return "";
+/** Vide (ou marqueur d'absence) → "N/A" : champs que l'IA doit toujours renseigner. */
+function normaliserNA(v: unknown): string {
+  if (typeof v !== "string") return "N/A";
   const t = v.trim();
-  if (!t || /^(n\/a|na|-+|non applicable|sans objet)$/i.test(t)) return "";
+  if (!t || /^(-+|non applicable|sans objet)$/i.test(t)) return "N/A";
   return t;
 }
 
@@ -250,9 +253,9 @@ function parserTableauRobuste(texte: string): {
   return { morceaux: gardes, tentes: pieces.length };
 }
 
-const SYSTEME = "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). CONTEXTE MÉTIER : AGL CI est une entreprise de TRANSIT ET LOGISTIQUE (manutention portuaire, transport de marchandises, douane, entreposage, gestion de son patrimoine immobilier et de ses infrastructures). Sa veille juridique ne porte que sur les textes qui affectent DIRECTEMENT ou INDIRECTEMENT son activité : réglementation du transport, du transit, de la douane, du commerce extérieur ; droit portuaire, maritime, ferroviaire, routier ; foncier et urbanisme UNIQUEMENT s'il concerne un terrain, un lotissement ou une zone où AGL CI ou une société liée est partie prenante (jamais les certificats fonciers de particuliers sans lien identifiable avec l'entreprise) ; droit du travail, fiscalité, environnement (HSE) applicables aux entreprises du secteur ; droit des sociétés/RCCM si l'entité concernée est AGL CI ou une filiale/partenaire connu. Un acte du Journal Officiel qui ne touche à AUCUN de ces domaines (ex : promotion d'un enseignant-chercheur, certificat foncier d'un particulier sans rapport avec l'entreprise, nomination d'un administrateur civil sans lien avec le secteur) N'EST PAS DE LA VEILLE JURIDIQUE PERTINENTE pour AGL CI, même s'il est bien présent dans le JO. RÈGLE FONCIER/CMPF : ne classer 'Directe' ou 'Indirecte' QUE si le nom d'AGL CI, d'une de ses filiales connues, ou d'un lotissement/zone logistique/portuaire apparaît dans l'acte ; par défaut, un certificat foncier concernant un particulier ou une société sans rapport apparent est 'Hors périmètre' — ne jamais assigner Patr Immo par réflexe sur tout ce qui touche au foncier. FIDÉLITÉ ABSOLUE : tu copies mot à mot les références officielles, les numéros d'articles et le contenu brut — tu ne tronques jamais, tu ne reformules jamais ces champs. MULTI-ACTES : le document peut contenir PLUSIEURS actes juridiquement distincts (un Journal Officiel = des dizaines d'actes) : tu dois systématiquement DÉDUIRE la nature de CHAQUE acte et recommander une BU par acte — sauf texte 'Hors périmètre', pour lequel tu ne suggères AUCUNE BU.";
+const SYSTEME = "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). CONTEXTE MÉTIER : AGL CI est une entreprise de TRANSIT ET LOGISTIQUE (manutention portuaire, transport de marchandises, douane, entreposage, gestion de son patrimoine immobilier et de ses infrastructures). Sa veille juridique ne porte que sur les textes qui affectent DIRECTEMENT ou INDIRECTEMENT son activité : réglementation du transport, du transit, de la douane, du commerce extérieur ; droit portuaire, maritime, ferroviaire, routier ; foncier et urbanisme UNIQUEMENT s'il concerne un terrain, un lotissement ou une zone où AGL CI ou une société liée est partie prenante (jamais les certificats fonciers de particuliers sans lien identifiable avec l'entreprise) ; droit du travail, fiscalité, environnement (HSE) applicables aux entreprises du secteur ; droit des sociétés/RCCM si l'entité concernée est AGL CI ou une filiale/partenaire connu. Un acte du Journal Officiel qui ne touche à AUCUN de ces domaines (ex : promotion d'un enseignant-chercheur, certificat foncier d'un particulier sans rapport avec l'entreprise, nomination d'un administrateur civil sans lien avec le secteur) N'EST PAS DE LA VEILLE JURIDIQUE PERTINENTE pour AGL CI, même s'il est bien présent dans le JO. RÈGLE FONCIER/CMPF : ne classer 'Directe' ou 'Indirecte' QUE si le nom d'AGL CI, d'une de ses filiales connues, ou d'un lotissement/zone logistique/portuaire apparaît dans l'acte ; par défaut, un certificat foncier concernant un particulier ou une société sans rapport apparent est 'Hors périmètre' — ne jamais assigner Patr Immo par réflexe sur tout ce qui touche au foncier. FIDÉLITÉ ABSOLUE : tu copies mot à mot les références officielles, les numéros d'articles et le contenu brut — tu ne tronques jamais, tu ne reformules jamais ces champs. MULTI-ACTES : le document peut contenir PLUSIEURS actes juridiquement distincts (un Journal Officiel = des dizaines d'actes) : tu dois systématiquement DÉDUIRE la nature de CHAQUE acte et recommander une BU par acte — sauf texte 'Hors périmètre', pour lequel tu ne suggères AUCUNE BU. FILTRE STRICT DE RAPIDITÉ : ignore immédiatement toute page ou section sans rapport avec le transit, la douane, les infrastructures portuaires/maritimes, ou AGL directement ou indirectement — si rien de pertinent sur une page, passe à la suivante sans la transcrire ; si toute la tranche est hors sujet, renvoie un tableau vide []. Ne transcris jamais les pages non pertinentes : l'analyse doit être rapide et ciblée.";
 
-const TACHE = "TÂCHE : Analyse le document joint et extrais TOUS ses actes sous forme de TABLEAU JSON (un objet par acte détecté — schéma ci-dessous). CONSIGNE : ne fusionne JAMAIS deux actes distincts (deux arrêtés consécutifs, deux certificats fonciers consécutifs = deux objets séparés). Si le document contient 49 actes, le tableau doit contenir 49 objets. JSON STRICT : dans les chaînes, n'utilise que des échappements JSON valides — aucun saut de ligne brut ni antislash isolé, sinon la réponse est rejetée. Schéma d'un acte : { \"natureTexte\": \"Décret | Arrêté | Avis d'enquête publique / commodo et incommodo | Certificat foncier individuel | Certificat foncier collectif | Certificat de mutation de propriété foncière | Récépissé de déclaration d'association | Formulaire de modification RCCM | Autre — nature de CET acte uniquement\", \"referenceTexte\": \"Référence officielle COMPLÈTE de CET acte — copie exacte sans tronquer\", \"article\": \"Articles concernés de CET acte copiés tels quels, ou N/A\", \"resumeTexte\": \"2-3 phrases sur CET acte uniquement\", \"libelleVersion\": \"Libellé complet de la version en vigueur\", \"lienHypertexte\": \"\", \"dateEntreeVigueur\": \"JJ/MM/AAAA ou chaîne vide\", \"contenuBrut\": \"Transcription brute complète de CET acte : COPIE EXACTE mot à mot — jamais tronquée, jamais inventée\", \"pertinenceTransit\": \"Directe | Indirecte | Hors périmètre\", \"buSuggeree\": \"DJ | DAF | DRH | Patr Immo | DQHSE | DIR_COMM_MARK | DILS — vide si Hors périmètre\" } Règle d'or : information absente = chaîne vide — n'invente JAMAIS.";
+const TACHE = "TÂCHE : Analyse le document joint et extrais TOUS ses actes sous forme de TABLEAU JSON (un objet par acte détecté — schéma ci-dessous). CONSIGNE : ne fusionne JAMAIS deux actes distincts (deux arrêtés consécutifs, deux certificats fonciers consécutifs = deux objets séparés). Si le document contient 49 actes, le tableau doit contenir 49 objets. JSON STRICT : dans les chaînes, n'utilise que des échappements JSON valides — aucun saut de ligne brut ni antislash isolé, sinon la réponse est rejetée. CHAMPS TOUJOURS RENSEIGNÉS : article, libelleVersion, dateEntreeVigueur et lienHypertexte ne sont JAMAIS vides — si rien n'est trouvé, écris exactement « N/A » (lienHypertexte = URL exacte lue dans le document, jamais inventée). Schéma d'un acte : { \"natureTexte\": \"Décret | Arrêté | Avis d'enquête publique / commodo et incommodo | Certificat foncier individuel | Certificat foncier collectif | Certificat de mutation de propriété foncière | Récépissé de déclaration d'association | Formulaire de modification RCCM | Autre — nature de CET acte uniquement\", \"referenceTexte\": \"Référence officielle COMPLÈTE de CET acte — copie exacte sans tronquer\", \"article\": \"Articles concernés de CET acte copiés tels quels, ou N/A\", \"resumeTexte\": \"2-3 phrases sur CET acte uniquement\", \"libelleVersion\": \"Libellé complet de la version en vigueur\", \"lienHypertexte\": \"\", \"dateEntreeVigueur\": \"JJ/MM/AAAA ou chaîne vide\", \"contenuBrut\": \"Transcription brute complète de CET acte : COPIE EXACTE mot à mot — jamais tronquée, jamais inventée\", \"pertinenceTransit\": \"Directe | Indirecte | Hors périmètre\", \"buSuggeree\": \"DJ | DAF | DRH | Patr Immo | DQHSE | DIR_COMM_MARK | DILS — vide si Hors périmètre\" } Règle d'or : information absente = chaîne vide — n'invente JAMAIS.";
 
 interface Tranche {
   donnees: string;
@@ -299,7 +302,7 @@ export async function POST(req: Request) {
     }
 
     // Clé OpenRouter configurée sur Vercel (variable OPENROUTER_API_KEY).
-    const apiKey = process.env.OPENROUTER_API_KEY;
+    const apiKey: string = process.env.OPENROUTER_API_KEY ?? "";
     if (!apiKey) {
       return NextResponse.json(
         { error: "Configuration : Clé API OpenRouter manquante sur le serveur (OPENROUTER_API_KEY)." },
@@ -319,23 +322,42 @@ export async function POST(req: Request) {
             },
           ];
 
-    // Extraction par tranche (un appel OpenRouter `google/gemini-2.5-flash`
-    // chacun). Une tranche en échec n'annule plus tout le lot (partiel + message).
-    const bruts: ActeBrut[] = [];
+    // Extraction par tranches en PARALLÈLE (×3 — divise le temps total) :
+    // un appel OpenRouter `google/gemini-2.5-flash` par tranche, ordre préservé.
+    // Une tranche en échec n'annule plus tout le lot (partiel + message).
+    const CONCURRENCE = 3;
+    const resultats: { actes: ActeBrut[]; ignores: number }[] = tranches.map(
+      () => ({ actes: [], ignores: 0 }),
+    );
     let tranchesEchouees = 0;
-    let objetsIgnores = 0;
-    for (const tranche of tranches) {
-      try {
-        const r = await extraireTranche(apiKey, tranche, TACHE, tranches.length);
-        bruts.push(...r.actes);
-        objetsIgnores += r.ignores;
-      } catch (e) {
-        tranchesEchouees += 1;
-        console.error(
-          `GEMINI_TRANCHE_ERREUR ${tranche.etiquette} :`,
-          e instanceof Error ? e.message : e,
-        );
+    let curseur = 0;
+    async function traiterTranche(): Promise<void> {
+      while (curseur < tranches.length) {
+        const i = curseur;
+        curseur += 1;
+        const tranche = tranches[i];
+        if (!tranche) continue;
+        try {
+          resultats[i] = await extraireTranche(apiKey, tranche, TACHE, tranches.length);
+        } catch (e) {
+          tranchesEchouees += 1;
+          console.error(
+            `GEMINI_TRANCHE_ERREUR ${tranche.etiquette} :`,
+            e instanceof Error ? e.message : e,
+          );
+        }
       }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(CONCURRENCE, tranches.length) }, () =>
+        traiterTranche(),
+      ),
+    );
+    const bruts: ActeBrut[] = [];
+    let objetsIgnores = 0;
+    for (const r of resultats) {
+      bruts.push(...r.actes);
+      objetsIgnores += r.ignores;
     }
     if (bruts.length === 0) {
       throw new Error(
@@ -345,13 +367,13 @@ export async function POST(req: Request) {
       );
     }
 
-/** Un appel d'extraction OpenRouter sur une tranche (actes validés + compteurs). */
-async function extraireTranche(
+/** Appel HTTP OpenRouter avec 1 retry sur 429/5xx (2 s d'attente). */
+async function appelerOpenRouter(
   apiKey: string,
   tranche: Tranche,
   tache: string,
   tranchesTotal: number,
-): Promise<{ actes: ActeBrut[]; recus: number; ignores: number }> {
+): Promise<Response> {
   // Pièce jointe : PDF en partie `file` (base64), image en `image_url` (data URL).
   const piece =
     tranche.mime === "application/pdf"
@@ -366,37 +388,58 @@ async function extraireTranche(
           type: "image_url",
           image_url: { url: `data:${tranche.mime};base64,${tranche.donnees}` },
         };
-  const reponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-      "HTTP-Referer": "https://juriscan.app",
-      "X-Title": "JuriScan AI",
-    },
-    body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      temperature: 0.1,
-      max_tokens: 16000,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: SYSTEME },
-        {
-          role: "user",
-          content: [
-            {
-              type: "text",
-              text:
-                tranchesTotal > 1
-                  ? `${tache} CONTEXTE DE TRANCHE : ceci est la tranche « ${tranche.etiquette} » d'un document plus long — extrais UNIQUEMENT les actes visibles dans CETTE tranche, sans deviner la suite ni répéter les autres tranches.`
-                  : tache,
-            },
-            piece,
-          ],
-        },
-      ],
-    }),
+  const corps = JSON.stringify({
+    model: "google/gemini-2.5-flash",
+    temperature: 0.1,
+    max_tokens: 16000,
+    response_format: { type: "json_object" },
+    messages: [
+      { role: "system", content: SYSTEME },
+      {
+        role: "user",
+        content: [
+          {
+            type: "text",
+            text:
+              tranchesTotal > 1
+                ? `${tache} CONTEXTE DE TRANCHE : ceci est la tranche « ${tranche.etiquette} » d'un document plus long — extrais UNIQUEMENT les actes visibles dans CETTE tranche, sans deviner la suite ni répéter les autres tranches.`
+                : tache,
+          },
+          piece,
+        ],
+      },
+    ],
   });
+  let reponse: Response | null = null;
+  for (let essai = 1; essai <= 2; essai += 1) {
+    reponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+        "HTTP-Referer": "https://juriscan.app",
+        "X-Title": "JuriScan AI",
+      },
+      body: corps,
+    });
+    if (reponse.ok) return reponse;
+    const rejouable = reponse.status === 429 || reponse.status >= 500;
+    if (!rejouable || essai === 2) return reponse;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+  }
+  // Inatteignable (2 essais) — garde-fou de typage.
+  if (!reponse) throw new Error("Échec OpenRouter.");
+  return reponse;
+}
+
+/** Un appel d'extraction OpenRouter sur une tranche (actes validés + compteurs). */
+async function extraireTranche(
+  apiKey: string,
+  tranche: Tranche,
+  tache: string,
+  tranchesTotal: number,
+): Promise<{ actes: ActeBrut[]; recus: number; ignores: number }> {
+  const reponse = await appelerOpenRouter(apiKey, tranche, tache, tranchesTotal);
   if (!reponse.ok) {
     const detail = await reponse.text().catch(() => "");
     throw new Error(`OpenRouter ${reponse.status} : ${detail.slice(0, 500)}`);
@@ -457,11 +500,11 @@ async function extraireTranche(
         qssfte: "",
         natureTexte: normaliserNature(a.natureTexte),
         referenceTexte: typeof a.referenceTexte === "string" ? a.referenceTexte.trim() : "",
-        article: normaliserArticle(a.article),
+        article: normaliserNA(a.article),
         resumeTexte: typeof a.resumeTexte === "string" ? a.resumeTexte.trim() : "",
-        libelleApplicable: typeof a.libelleVersion === "string" ? a.libelleVersion.trim() : "",
-        lienHypertexte: "",
-        dateEntreeVigueur: normaliserDate(a.dateEntreeVigueur),
+        libelleApplicable: normaliserNA(a.libelleVersion),
+        lienHypertexte: normaliserNA(a.lienHypertexte),
+        dateEntreeVigueur: normaliserNA(normaliserDate(a.dateEntreeVigueur)),
         contenu: typeof a.contenuBrut === "string" ? a.contenuBrut.trim() : "",
         moyenCommunication: "",
         applicableAGLCI: !horsPerimetre,

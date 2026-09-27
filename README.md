@@ -23,10 +23,13 @@ voir `src/lib/dataverse/tables.ts`).
   en tranches de 5 pages (+1 de chevauchement, fusion/dédoublonnage), sortie JSON
   structurée (schéma zod). Fidélité exigée : articles copiés mot à mot,
   transcription brute complète (`contenu`), références jamais tronquées, rien
-  d'inventé. Robustesse : `response_format: json_object` + consigne JSON strict
+  d'inventé ; article, libellé, date d'entrée en vigueur et lien hypertexte
+  (URL exacte lue, jamais inventée) valent « N/A » si rien. Robustesse : `response_format: json_object` + consigne JSON strict
   + parseur en 3 temps (direct → réparation antislash/contrôles → sauvetage
   objet par objet) — une tranche en échec n'annule plus le lot (partiel +
-  avertissement). Contexte métier AGL CI (transit/logistique) en tête du prompt :
+  avertissement). Contexte métier AGL CI (transit/logistique) + filtre strict en
+  tête du prompt : pages hors sujet ignorées (tableau vide admis), tranches en
+  parallèle (×3, 1 retry 429/5xx) pour une analyse rapide et ciblée :
   pertinence `Directe` / `Indirecte` / `Hors périmètre` (jamais de BU suggérée
   hors périmètre ; `applicableAGLCI` décoché par défaut dans ce cas, la centrale
   tranche). Fichiers de test : `public/exemples/` (JO n°53, chargeables depuis
