@@ -4,7 +4,8 @@
  * Recréation cible dans Dataverse / Power Pages :
  * - 7 tables : User, VeilleAlerte, VeilleFiche, VeilleAction (+ SCD2 :
  *   VeilleFicheVersion, VeilleActionVersion, VeilleJournal).
- * - 3 jeux d'options (OptionSets) : DepartementCode, ConformiteStatut, FluxStatut.
+ * - 4 jeux d'options (OptionSets) : DepartementCode, ConformiteStatut,
+ *   FluxStatut, PertinenceTransit.
  * - Relations : voir `relations` ci-dessous (lookup + cascade).
  * - Workflow double validation : `VeilleAlerte.propositionBU` (recommandation IA)
  *   → `VeilleFiche.fluxStatut` (ATTENTE_VALIDATION_JURIDIQUE → ATTENTE_APPROBATION_METIER
@@ -76,6 +77,7 @@ export const DATAVERSE_OPTION_SETS = {
     "APPROUVE_METIER",
     "REJETE_METIER",
   ],
+  PertinenceTransit: ["Directe", "Indirecte", "Hors périmètre"],
 } as const;
 
 export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
@@ -106,6 +108,7 @@ export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
       { logicalName: "moyencommunication", displayName: "Moyen de communication", dataType: "SingleLineOfText" },
       { logicalName: "applicableaglci", displayName: "Applicable à AGL CI", dataType: "TwoOptions" },
       { logicalName: "propositionbu", displayName: "BU recommandée par l'IA (Gemini 3.6 Flash)", dataType: "OptionSet" },
+      { logicalName: "pertinencetransit", displayName: "Pertinence transit/logistique (Directe/Indirecte/Hors périmètre)", dataType: "OptionSet" },
     ],
   },
   VeilleFiche: {

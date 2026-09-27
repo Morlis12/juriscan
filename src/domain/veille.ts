@@ -126,6 +126,20 @@ export const BU_PROPOSITIONNABLES = [
 
 export type PropositionBU = (typeof BU_PROPOSITIONNABLES)[number];
 
+/**
+ * Pertinence transit/logistique (contexte métier AGL CI, voir prompt
+ * POST /api/analyse). `Hors périmètre` = aucun lien avec l'activité →
+ * jamais de BU suggérée (`propositionBU` vide). `applicableAGLCI` (booléen
+ * historique) reste inchangé ; la centrale tranche dans tous les cas.
+ */
+export const PERTINENCE_TRANSIT = [
+  "Directe",
+  "Indirecte",
+  "Hors périmètre",
+] as const;
+
+export type PertinenceTransit = (typeof PERTINENCE_TRANSIT)[number];
+
 /** Acteur interne assignable aux actions (table `User`). */
 export interface DomainUser {
   id: string;
@@ -156,6 +170,8 @@ export interface DomainVeilleAlerte {
   applicableA_AGL_CI: boolean;
   /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable. */
   propositionBU: DepartementCode | null;
+  /** Pertinence transit/logistique (Directe | Indirecte | Hors périmètre). */
+  pertinenceTransit: PertinenceTransit | null;
   createdAt: Date | string;
   updatedAt: Date | string;
 }

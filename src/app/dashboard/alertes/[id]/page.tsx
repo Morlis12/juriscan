@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/veille";
-import { NATURES_TEXTE } from "@/domain/veille";
+import { NATURES_TEXTE, PERTINENCE_TRANSIT } from "@/domain/veille";
 import { estCentrale, messageAccesRefuse, peutOuvrirFiche } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
@@ -52,6 +52,8 @@ interface ApiGetData {
     moyenCommunication: string | null;
     applicableA_AGL_CI: boolean;
     propositionBU?: DepartementCode | null;
+    /** Pertinence transit/logistique (Directe | Indirecte | Hors périmètre). */
+    pertinenceTransit: string | null;
   };
   fiche: {
     departement: DepartementCode;
@@ -148,6 +150,11 @@ export default function ModifierAlertePage() {
           moyenCommunication: alerte.moyenCommunication ?? "",
           applicableAGLCI: alerte.applicableA_AGL_CI,
           propositionBU: alerte.propositionBU ?? "",
+          pertinenceTransit: (
+            (PERTINENCE_TRANSIT as readonly string[]).includes(alerte.pertinenceTransit ?? "")
+              ? alerte.pertinenceTransit
+              : ""
+          ) as AlerteAnalyse21["pertinenceTransit"],
           departementResponsable: fiche.departement,
           departementsResponsables: [fiche.departement],
           actionsExistantes: fiche.actionsExistantes ?? "",
@@ -430,6 +437,25 @@ export default function ModifierAlertePage() {
                     </span>
                     <span className="font-medium text-slate-800">{form.applicableAGLCI ? "Oui" : "Non"}</span>
                   </span>
+                </label>
+                <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm sm:col-span-2">
+                  <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
+                    Pertinence transit / logistique (IA){!texteEditable ? " 🔒" : ""}
+                  </span>
+                  <select
+                    value={form.pertinenceTransit}
+                    disabled={!texteEditable}
+                    onChange={(e) => set("pertinenceTransit", e.target.value as AlerteAnalyse21["pertinenceTransit"])}
+                    title="Directe / Indirecte / Hors périmètre — modifiable par la centrale uniquement"
+                    className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white disabled:cursor-not-allowed disabled:opacity-70"
+                  >
+                    <option value="">— Non renseignée —</option>
+                    {PERTINENCE_TRANSIT.map((p) => (
+                      <option key={p} value={p}>
+                        {p}
+                      </option>
+                    ))}
+                  </select>
                 </label>
               </Bloc>
 

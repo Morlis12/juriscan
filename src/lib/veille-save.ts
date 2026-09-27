@@ -17,6 +17,7 @@ import {
   CONFORMITE_STATUTS,
   DEPARTEMENT_CODES,
   FLUX_STATUTS,
+  PERTINENCE_TRANSIT,
   type ConformiteStatut,
   type DepartementCode,
   type FluxStatut,
@@ -37,6 +38,9 @@ export interface FicheVeillePayload {
   applicableAGLCI?: unknown;
   /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable. */
   propositionBU?: unknown;
+  /** Pertinence transit/logistique (Directe | Indirecte | Hors périmètre). */
+  pertinenceTransit?: unknown;
+  /** Assignation multi-BU : un texte peut concerner plusieurs BU (cases à cocher). */
   /** Assignation multi-BU : un texte peut concerner plusieurs BU (cases à cocher). */
   departementsResponsables?: unknown;
   departementResponsable?: unknown;
@@ -200,6 +204,12 @@ export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeil
     (err as NodeJS.ErrnoException).code = "VALIDATION_400";
     throw err;
   }
+  // pertinenceTransit optionnelle : si fournie, valeur de la liste fermée.
+  const pertinenceRaw = chaine(b.pertinenceTransit).trim();
+  const pertinenceTransit =
+    (PERTINENCE_TRANSIT as readonly string[]).includes(pertinenceRaw)
+      ? pertinenceRaw
+      : null;
   // fluxStatut optionnel : défaut ATTENTE_VALIDATION_JURIDIQUE (sortie d'OCR IA).
   const fluxStatut: FluxStatut =
     fluxRaw && (FLUX_STATUTS as string[]).includes(fluxRaw)
@@ -226,8 +236,9 @@ export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeil
           dateEntreeVigueur: dateOuNull(b.dateEntreeVigueur),
           contenu: chaine(b.contenu).trim() || resumeTexte,
           moyenCommunication: chaine(b.moyenCommunication).trim() || null,
-          applicableA_AGL_CI: b.applicableAGLCI !== false,
-          propositionBU,
+        applicableA_AGL_CI: b.applicableAGLCI !== false,
+        propositionBU,
+        pertinenceTransit,
           fichesDepartements: {
             create: departements.map((code) => ({
               departement: code as DepartementCode,

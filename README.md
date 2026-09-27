@@ -19,7 +19,10 @@ voir `src/lib/dataverse/tables.ts`).
   (IA, repli simulation sans clé) ou saisie manuelle → **assignation
   multi-BU** (un texte → une fiche par BU cochée). Fidélité exigée : articles
   copiés mot à mot, transcription brute complète (`contenu`), références jamais
-  tronquées, rien d'inventé. Fichiers de test : `public/exemples/` (JO n°53,
+  tronquées, rien d'inventé. Contexte métier AGL CI (transit/logistique) en tête
+  du prompt : pertinence `Directe` / `Indirecte` / `Hors périmètre` (jamais de BU
+  suggérée hors périmètre ; `applicableAGLCI` décoché par défaut dans ce cas,
+  la centrale tranche). Fichiers de test : `public/exemples/` (JO n°53,
   chargeables depuis l'écran).
 - **Workflow à double validation** : `ATTENTE_VALIDATION_JURIDIQUE` →
   `ATTENTE_APPROBATION_METIER` → `APPROUVE_METIER` | `REJETE_METIER`
@@ -184,9 +187,10 @@ Aucune colonne ajoutée — réutilisation du modèle SCD2 (tables concernées :
 
 ## Migration Microsoft (Power Pages / Dataverse)
 
-- Recréer les **7 tables** + 3 OptionSets (`DepartementCode`,
-  `ConformiteStatut`, `FluxStatut`) d'après `src/lib/dataverse/tables.ts`
-  (`DATAVERSE_TABLES`, `DATAVERSE_OPTION_SETS`, `DATAVERSE_RELATIONS`).
+- Recréer les **7 tables** + 4 OptionSets (`DepartementCode`,
+  `ConformiteStatut`, `FluxStatut`, `PertinenceTransit`) d'après
+  `src/lib/dataverse/tables.ts` (`DATAVERSE_TABLES`, `DATAVERSE_OPTION_SETS`,
+  `DATAVERSE_RELATIONS`).
 - Activer l'**Auditing natif** + recréer `VeilleJournal` (lecture Power Pages) et
   les tables `*Version` (colonnes `validFrom`/`validTo`/`isCurrent`/`version`).
 - Sécurité : 1 Business Unit + 1 Team par BU (+ BU « Centrale ») ; rôle

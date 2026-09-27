@@ -4,7 +4,7 @@ import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/veille";
-import { CONFORMITE_STATUTS, DEPARTEMENT_CODES, NATURES_TEXTE } from "@/domain/veille";
+import { CONFORMITE_STATUTS, DEPARTEMENT_CODES, NATURES_TEXTE, PERTINENCE_TRANSIT } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
   creerAlerteVierge,
@@ -33,6 +33,8 @@ interface ApiAnalyseData {
   departement?: string;
   /** Recommandation IA : BU la plus probable. */
   propositionBU?: string;
+  /** Pertinence transit/logistique déduite par l'IA (vide = non renseignée). */
+  pertinenceTransit?: string;
 }
 
 function texteOu(v: unknown, repli: string): string {
@@ -178,8 +180,18 @@ export default function NouvelleAlertePage() {
       const statut = (CONFORMITE_STATUTS as string[]).includes(data.statutConformite ?? "")
         ? (data.statutConformite as ConformiteStatut)
         : socle.statutConformite;
+      // Pertinence transit (liste fermée) ; hors périmètre → applicable décoché
+      // par défaut (la centrale reste décideuse de l'assignation).
+      const pertinence = (
+        (PERTINENCE_TRANSIT as readonly string[]).includes(data.pertinenceTransit ?? "")
+          ? data.pertinenceTransit
+          : ""
+      ) as AlerteAnalyse21["pertinenceTransit"];
+      const horsPerimetre = pertinence === "Hors périmètre";
       const analyse: AlerteAnalyse21 = {
         ...socle,
+        applicableAGLCI: horsPerimetre ? false : socle.applicableAGLCI,
+        pertinenceTransit: pertinence,
         numeroOrdre: texteOu(data.numeroOrdre, socle.numeroOrdre),
         qssfte: texteOu(data.qssfte, socle.qssfte),
         natureTexte: texteOu(data.natureTexte, socle.natureTexte),
@@ -580,6 +592,21 @@ export default function NouvelleAlertePage() {
               </Bloc>
 
               <Bloc titre="Assignation — BU responsables (une fiche par BU cochée)">
+                {resultat.pertinenceTransit && (
+                  <p
+                    className={`rounded-lg px-3 py-2 text-xs font-medium sm:col-span-2 ${
+                      resultat.pertinenceTransit === "Directe"
+                        ? "bg-emerald-50 text-emerald-800"
+                        : resultat.pertinenceTransit === "Indirecte"
+                          ? "bg-amber-50 text-amber-800"
+                          : "bg-red-50 text-red-800"
+                    }`}
+                  >
+                    {resultat.pertinenceTransit === "Hors périmètre"
+                      ? "⛔ Texte hors périmètre transit/logistique — aucune BU recommandée. La centrale reste seule décideuse de l'assignation."
+                      : `Pertinence transit : ${resultat.pertinenceTransit} — recommandation IA, la centrale tranche.`}
+                  </p>
+                )}
                 {resultat.propositionBU && (
                   <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue sm:col-span-2">
                     🤖 L&apos;IA recommande la BU :{" "}

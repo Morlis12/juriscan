@@ -69,6 +69,9 @@ model VeilleAlerte {
   applicableA_AGL_CI Boolean   @default(true) // Applicable à AGL CI
   // Recommandation IA (Gemini 3.6 Flash) : BU la plus probable parmi DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS.
   propositionBU      DepartementCode?
+  // Pertinence transit/logistique (Directe | Indirecte | Hors périmètre) :
+  // jamais de BU suggérée si Hors périmètre (voir prompt POST /api/analyse).
+  pertinenceTransit  String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 

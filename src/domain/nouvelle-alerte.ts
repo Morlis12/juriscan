@@ -16,7 +16,7 @@
  * - Table VeilleAction (4 champs) : plan d'amélioration piloté par la BU.
  */
 
-import type { ConformiteStatut, DepartementCode } from "@/domain/veille";
+import type { ConformiteStatut, DepartementCode, PertinenceTransit } from "@/domain/veille";
 import { DEPARTEMENTS } from "@/domain/veille";
 
 /** Les 21 colonnes d'une ligne d'alerte analysée (tout est éditable côté UI). */
@@ -48,6 +48,8 @@ export interface AlerteAnalyse21 {
   applicableAGLCI: boolean;
   /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable (DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS). */
   propositionBU: DepartementCode | "";
+  /** Pertinence transit/logistique déduite par l'IA (vide = non renseignée). */
+  pertinenceTransit: PertinenceTransit | "";
   // ——— VeilleFiche : 5 champs + assignation multi-BU ———
   /** 13 — Département d'acteurs responsable (assignation principale, compat). */
   departementResponsable: DepartementCode;
@@ -99,6 +101,7 @@ export function creerAlerteVierge(): AlerteAnalyse21 {
     moyenCommunication: "",
     applicableAGLCI: true,
     propositionBU: "",
+    pertinenceTransit: "",
     departementResponsable: "DJ",
     departementsResponsables: ["DJ"],
     actionsExistantes: "",

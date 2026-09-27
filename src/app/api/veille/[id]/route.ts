@@ -35,6 +35,7 @@ import {
   CONFORMITE_STATUTS,
   DEPARTEMENT_CODES,
   FLUX_STATUTS,
+  PERTINENCE_TRANSIT,
   type ConformiteStatut,
   type DepartementCode,
   type FluxStatut,
@@ -194,6 +195,13 @@ export async function PUT(
     // --- Détection des groupes touchés (avant/après normalisés) ---
     const isoJour = (d: Date | null): string =>
       d ? d.toISOString().slice(0, 10) : "";
+    // Pertinence transit : liste fermée (centrale uniquement, comme le texte).
+    const pertinenceRaw = chaine(b.pertinenceTransit).trim();
+    const pertinenceApres = (PERTINENCE_TRANSIT as readonly string[]).includes(
+      pertinenceRaw,
+    )
+      ? pertinenceRaw
+      : "";
     const texteAvant = {
       numeroOrdre: alerteAvant.numeroOrdre,
       qssfte: alerteAvant.qssfte ?? "",
@@ -207,6 +215,7 @@ export async function PUT(
       contenu: alerteAvant.contenu,
       moyenCommunication: alerteAvant.moyenCommunication ?? "",
       applicableAGLCI: alerteAvant.applicableA_AGL_CI,
+      pertinenceTransit: alerteAvant.pertinenceTransit ?? "",
     };
     const texteApres = {
       numeroOrdre,
@@ -221,6 +230,7 @@ export async function PUT(
       contenu: chaine(b.contenu).trim() || resumeTexte,
       moyenCommunication: chaine(b.moyenCommunication).trim(),
       applicableAGLCI: b.applicableAGLCI !== false,
+      pertinenceTransit: pertinenceApres,
     };
     const champsTexte = diffChamps(texteAvant, texteApres);
     const toucheTexte = champsTexte.length > 0;
@@ -301,6 +311,7 @@ export async function PUT(
             contenu: chaine(b.contenu).trim() || chaine(b.resumeTexte).trim(),
             moyenCommunication: chaine(b.moyenCommunication).trim() || null,
             applicableA_AGL_CI: b.applicableAGLCI !== false,
+            pertinenceTransit: pertinenceApres || null,
           },
         });
       }
