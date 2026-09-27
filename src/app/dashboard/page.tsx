@@ -9,7 +9,7 @@ import {
   FLUX_STATUT_LABELS,
 } from "@/domain/veille";
 import { messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
-import { dureeDepuis, formaterDateFR } from "@/domain/jalons";
+import { dureeDepuis, formaterDateFR, formaterDateHeureFR } from "@/domain/jalons";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
@@ -208,7 +208,7 @@ export default function DashboardPage() {
                 : CONFORMITE_POURCENTAGE[f.statutConformite],
               fluxStatut: f.fluxStatut ?? "ATTENTE_VALIDATION_JURIDIQUE",
               propositionBU: a.propositionBU ?? null,
-              derniereModif: (f.updatedAt ?? a.createdAt).slice(0, 10),
+              derniereModif: f.updatedAt ?? a.createdAt,
               preuveDifferee: f.preuveDifferee ?? null,
               preuveFichierNom: f.preuveFichierNom ?? null,
               preuveFichierMime: f.preuveFichierMime ?? null,
@@ -437,13 +437,10 @@ export default function DashboardPage() {
   const perimetreLabel =
     filtreBU === "ALL" ? "Vue générale" : DEPARTEMENTS[filtreBU as DepartementCode];
 
-  /** Dernière mise à jour (haut à droite) : plus récente des fiches affichées. */
+  /** Dernière mise à jour (haut à droite) : plus récente des fiches affichées (date + heure). */
   const derniereMaj = useMemo(() => {
     const source = alertes.length > 0 ? alertes : toutesAlertes;
-    const dates = source
-      .map((a) => a.derniereModif.slice(0, 10))
-      .filter((d) => d !== "")
-      .sort();
+    const dates = source.map((a) => a.derniereModif).filter((d) => d !== "").sort();
     return dates.length > 0 ? dates[dates.length - 1] : null;
   }, [alertes, toutesAlertes]);
 
@@ -513,7 +510,7 @@ export default function DashboardPage() {
                 className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-200"
               >
                 Dernière mise à jour :{" "}
-                <span className="font-bold text-white">{formaterDateFR(derniereMaj)}</span>
+                <span className="font-bold tabular-nums text-white">{formaterDateHeureFR(derniereMaj)}</span>
               </span>
             )}
           </div>

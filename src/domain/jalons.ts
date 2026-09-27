@@ -52,6 +52,16 @@ export function formaterDateFR(iso: string | null | undefined): string {
   });
 }
 
+/** JJ/MM/AAAA à HH:MM:SS depuis un ISO (heure lue telle quelle, sans conversion de fuseau). */
+export function formaterDateHeureFR(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const date = formaterDateFR(iso);
+  if (date === "—") return "—";
+  const heure = iso.slice(11, 19);
+  if (!/^\d{2}:\d{2}:\d{2}$/.test(heure)) return date;
+  return `${date} à ${heure}`;
+}
+
 /** Ancienneté en clair (« 1 jour », « 12 jours », « 2 mois », …). */
 export function dureeDepuis(
   iso: string | null | undefined,
