@@ -93,7 +93,7 @@ src/
     PreuveFichierInput.tsx      # pièce jointe preuve (PDF/image ≤ 8 Mo, base64)
   data/
     veille-mock.ts              # 30 fiches + 5 textes multi-BU (AGL-2026-031 à 035)
-    historique-demo.ts          # journal simulé déterministe + jalonsDemoPourFiche
+    historique-demo.ts          # journal simulé ancré à aujourd'hui + jalonsDemoPourFiche
   domain/                       # pur, sans Next.js/Prisma — référence portable Dataverse
     veille.ts                   # types, statuts, workflow, BU
     acces.ts                    # MATRICE D'ACCÈS (centrale vs BU — DJ cloisonnée)

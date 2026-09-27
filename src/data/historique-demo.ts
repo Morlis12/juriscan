@@ -6,11 +6,13 @@ import { MOCK_ALERTES } from "@/data/veille-mock";
 /**
  * JuriScan AI — Historique de démonstration (sans base de données).
  *
- * Les fiches visibles (`mock-*`) ne sont pas persistées : aucun journal SCD2
- * n'existe pour elles. Ce jeu déterministe rejoue un historique plausible
- * (création centrale → validation → approbation/rejet BU → pilotage du taux)
- * aligné sur le cycle `FLUX_DEMO` du tableau de bord (même index → même flux),
- * pour observer la traçabilité avant la connexion SQL.
+ * Les fiches visibles (`mock-*`) ne sont pas persistées : aucun journal réel
+ * n'existe pour elles. Ce jeu rejoue un historique plausible (création
+ * centrale → validation → approbation/rejet BU → pilotage du taux) aligné sur
+ * le cycle `FLUX_DEMO` du tableau de bord (même index → même flux).
+ * Les dates sont ancrées à AUJOURD'HUI (activité récente simulée) pour que la
+ * « Dernière mise à jour » et les anciennetés reflètent une fraîcheur juste ;
+ * en base connectée, ce sont les vraies dates SQL qui s'affichent.
  * Dès que GET /api/historique renvoie des lignes réelles, elles s'ajoutent
  * devant (triées par date décroissante) ; la démo reste en repli.
  */
@@ -25,11 +27,18 @@ const FLUX_DEMO: FluxStatut[] = [
 
 const EMAIL_CENTRALE = "veille.reglementaire@agl-ci.com";
 
-function decalerJours(iso: string, jours: number, heure: number): string {
-  const d = new Date(`${iso}T00:00:00`);
-  d.setDate(d.getDate() + jours);
-  const base = d.toISOString().slice(0, 10);
-  return `${base}T${String(heure).padStart(2, "0")}:00:00`;
+const pad2 = (n: number): string => String(n).padStart(2, "0");
+
+/**
+ * Date ancrée à aujourd'hui (heure locale) : la démo simule une activité
+ * récente pour une fraîcheur juste (pastille « Dernière mise à jour »,
+ * anciennetés rejets/approbations). Ordre préservé par fiche :
+ * création < validation < approbation/rejet < pilotage du taux.
+ */
+function jourRelatif(decalageJours: number, heure: number): string {
+  const d = new Date();
+  d.setDate(d.getDate() + decalageJours);
+  return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}T${pad2(heure)}:00:00`;
 }
 
 function emailBU(dept: string): string {
@@ -41,6 +50,8 @@ function construire(): JournalEntree[] {
   MOCK_ALERTES.forEach((m, i) => {
     const flux = FLUX_DEMO[i % FLUX_DEMO.length];
     const id = (k: string): string => `demo-${m.id}-${k}`;
+    // Ancienneté de la fiche (10 à 18 jours) + étapes +3/+6/+9 jours.
+    const anciennete = 10 + (i % 9);
     entrees.push({
       id: id("creation"),
       alerteId: null,
@@ -54,7 +65,7 @@ function construire(): JournalEntree[] {
       emailAuteur: EMAIL_CENTRALE,
       details: `Assignée à ${m.departement} par la centrale (texte ${m.numeroOrdre}).`,
       champsModifies: ["departement", "fluxStatut"],
-      createdAt: decalerJours(m.dateEntreeVigueur, -12, 9 + (i % 8)),
+      createdAt: jourRelatif(-anciennete, 9 + (i % 8)),
     });
     if (flux !== "ATTENTE_VALIDATION_JURIDIQUE") {
       entrees.push({
@@ -70,7 +81,7 @@ function construire(): JournalEntree[] {
         emailAuteur: EMAIL_CENTRALE,
         details: `Validée vers ${m.departement} par la centrale.`,
         champsModifies: ["fluxStatut"],
-        createdAt: decalerJours(m.dateEntreeVigueur, -9, 10 + (i % 7)),
+        createdAt: jourRelatif(-anciennete + 3, 10 + (i % 7)),
       });
     }
     if (flux === "APPROUVE_METIER") {
@@ -87,7 +98,7 @@ function construire(): JournalEntree[] {
         emailAuteur: emailBU(m.departement),
         details: `Approuvée par ${m.departement} à ${m.tauxAvancement} %.`,
         champsModifies: ["fluxStatut", "statutConformite", "tauxAvancement"],
-        createdAt: decalerJours(m.dateEntreeVigueur, -6, 11 + (i % 6)),
+        createdAt: jourRelatif(-anciennete + 6, 11 + (i % 6)),
       });
       if (m.tauxAvancement > 0) {
         entrees.push({
@@ -103,7 +114,7 @@ function construire(): JournalEntree[] {
           emailAuteur: emailBU(m.departement),
           details: `Taux piloté à ${m.tauxAvancement} % par ${m.departement}.`,
           champsModifies: ["tauxAvancement"],
-          createdAt: decalerJours(m.dateEntreeVigueur, -2, 14 + (i % 4)),
+          createdAt: jourRelatif(-anciennete + 9, 14 + (i % 4)),
         });
       }
     }
@@ -121,7 +132,7 @@ function construire(): JournalEntree[] {
         emailAuteur: emailBU(m.departement),
         details: `Assignation refusée par ${m.departement} (retour centrale).`,
         champsModifies: ["fluxStatut"],
-        createdAt: decalerJours(m.dateEntreeVigueur, -6, 11 + (i % 6)),
+        createdAt: jourRelatif(-anciennete + 6, 11 + (i % 6)),
       });
     }
   });
