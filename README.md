@@ -78,6 +78,7 @@ npm run dev            # http://localhost:3000 → redirige vers /dashboard
 | `npm run start` | Serveur de production |
 | `npm run lint` | ESLint |
 | `npm run db:generate` / `db:push` / `db:migrate` / `db:studio` | Client Prisma / schéma / migrations / explorateur |
+| `npm run pptx` | Régénère `AGL-JuriCompliance-Presentation.pptx` (voir § Support) |
 
 Sans `DATABASE_URL` (ou sans clé Gemini), l'appli fonctionne en **mode démo** :
 mocks visibles + historique simulé, repli silencieux des appels SQL.
@@ -135,6 +136,9 @@ public/logo-agl.png             # logo officiel AGL (fond #1C3359)
 public/exemples/                # fichiers de test d'analyse (53.pdf + image, JO n°53)
 scripts/build-info.mjs          # horodate chaque build/dev → src/generated/build-info.ts
                                 # (date de l'application, ignoré par Git)
+scripts/build-presentation.mjs  # génère la présentation (6 slides, icônes, transitions,
+                                # notes de l'orateur) → AGL-JuriCompliance-Presentation.pptx
+scripts/lib/                     #/modules de génération OOXML (zip, formes/icônes, paquet)
 ```
 
 ## Accès — cloisonnement strict par BU
@@ -223,4 +227,13 @@ Aucune colonne ajoutée — réutilisation du modèle SCD2 (tables concernées :
 
 ## Support
 
-`AGL-JuriCompliance-Presentation.pptx` (racine) : présentation du prototype.
+`AGL-JuriCompliance-Presentation.pptx` (racine) : présentation du prototype en
+6 slides — couverture, constat, architecture, fonctionnement (double validation
++ cloisonnement BU), garanties (SCD2, fidélité, fraîcheur), perspectives
+Power Pages / Dataverse. Icônes vectorielles et transitions (fondu, poussée,
+morph) sur chaque slide, notes de l'orateur incluses, identité AGL
+(`#1C3359` / `#B6AD6E`, logo officiel).
+
+Régénération après toute évolution du projet : `npm run pptx`
+(le `.pptx` est construit par `scripts/build-presentation.mjs`, sans dépendance
+externe : OOXML écrit à la main et empaqueté par `scripts/lib/`).
