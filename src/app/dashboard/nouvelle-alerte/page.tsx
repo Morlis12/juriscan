@@ -44,8 +44,10 @@ interface ApiAnalyseActe {
 
 interface ApiAnalyseMeta {
   tranches?: number;
+  tranchesEchouees?: number;
   actesBruts?: number;
   actesRetenus?: number;
+  objetsIgnores?: number;
 }
 
 function texteOu(v: unknown, repli: string): string {
@@ -93,6 +95,8 @@ export default function NouvelleAlertePage() {
   const [indexActe, setIndexActe] = useState(0);
   const [source, setSource] = useState<"gemini" | "simulation" | null>(null);
   const [meta, setMeta] = useState<ApiAnalyseMeta | null>(null);
+  /** Analyse partielle (tranches/objets perdus) : affiché en ambre, les actes restent. */
+  const [avertissement, setAvertissement] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [mode, setMode] = useState<ModeSaisie>("auto");
 
@@ -131,6 +135,7 @@ export default function NouvelleAlertePage() {
     setSource(null);
     setMeta(null);
     setMessage(null);
+    setAvertissement(null);
   }
 
   function choisirMode(m: ModeSaisie) {
@@ -201,6 +206,7 @@ export default function NouvelleAlertePage() {
         data?: { actes?: ApiAnalyseActe[] };
         source?: "gemini" | "simulation";
         meta?: ApiAnalyseMeta;
+        avertissement?: string;
         error?: string;
       };
       if (!reponse.ok || !payload.success || !payload.data || !Array.isArray(payload.data.actes)) {
@@ -259,6 +265,7 @@ export default function NouvelleAlertePage() {
       setActes(numeroterActes(normalises));
       setIndexActe(0);
       setMeta(payload.meta ?? null);
+      setAvertissement(payload.avertissement ?? null);
       setSource(payload.source ?? "gemini");
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
@@ -594,6 +601,11 @@ export default function NouvelleAlertePage() {
                 {actes.length} acte{actes.length > 1 ? "s" : ""} détecté{actes.length > 1 ? "s" : ""}
                 {meta?.tranches && meta.tranches > 1 ? ` (${meta.tranches} tranches analysées)` : ""}
                 {" — "}acte {Math.min(indexActe, actes.length - 1) + 1}/{actes.length} affiché.
+              </p>
+            )}
+            {avertissement && (
+              <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] font-medium text-amber-800">
+                ⚠ {avertissement}
               </p>
             )}
           </div>

@@ -129,9 +129,130 @@ function normaliserArticle(v: unknown): string {
   return t;
 }
 
+/**
+ * Répare un JSON mal échappé (cas réel : antislash isolés `\2`, `\C…` et
+ * sauts de ligne bruts dans les transcriptions). Balayage en respectant les
+ * chaînes : antislash invalide → doublé, caractère de contrôle brut → échappé.
+ * Extrait aussi le tableau si du texte l'entoure (premier `[` … dernier `]`).
+ */
+function reparerJson(texte: string): string {
+  const debut = texte.indexOf("[");
+  const fin = texte.lastIndexOf("]");
+  const s = debut >= 0 && fin > debut ? texte.slice(debut, fin + 1) : texte;
+  let out = "";
+  let dansChaine = false;
+  for (let i = 0; i < s.length; i += 1) {
+    const c = s[i];
+    if (dansChaine) {
+      if (c === "\\") {
+        const suivant = s[i + 1];
+        if (suivant === undefined) {
+          out += "\\\\";
+          break;
+        }
+        if ('"\\/bfnrt'.includes(suivant)) {
+          out += c + suivant;
+          i += 1;
+        } else if (
+          suivant === "u" &&
+          /^[0-9a-fA-F]{4}$/.test(s.slice(i + 2, i + 6))
+        ) {
+          out += s.slice(i, i + 6);
+          i += 5;
+        } else {
+          // Antislash invalide (\C, \2…) : on le neutralise en le doublant,
+          // sinon JSON.parse rejette toute la réponse (« Bad escaped character »).
+          out += `\\\\${suivant}`;
+          i += 1;
+        }
+      } else if (c === '"') {
+        dansChaine = false;
+        out += c;
+      } else {
+        const code = c.charCodeAt(0);
+        if (code < 0x20) {
+          if (c === "\n") out += "\\n";
+          else if (c === "\r") out += "\\r";
+          else if (c === "\t") out += "\\t";
+          else out += " ";
+        } else {
+          out += c;
+        }
+      }
+    } else {
+      if (c === '"') dansChaine = true;
+      out += c;
+    }
+  }
+  return out;
+}
+
+/** Découpe les objets de premier niveau d'un tableau (respect des chaînes). */
+function decouperObjets(tableau: string): string[] {
+  const morceaux: string[] = [];
+  let profondeur = 0;
+  let dansChaine = false;
+  let echappe = false;
+  let debut = -1;
+  for (let i = 0; i < tableau.length; i += 1) {
+    const c = tableau[i];
+    if (dansChaine) {
+      if (echappe) echappe = false;
+      else if (c === "\\") echappe = true;
+      else if (c === '"') dansChaine = false;
+    } else if (c === '"') {
+      dansChaine = true;
+    } else if (c === "{") {
+      if (profondeur === 0) debut = i;
+      profondeur += 1;
+    } else if (c === "}") {
+      profondeur -= 1;
+      if (profondeur === 0 && debut >= 0) {
+        morceaux.push(tableau.slice(debut, i + 1));
+        debut = -1;
+      }
+    }
+  }
+  return morceaux;
+}
+
+/**
+ * Parse robuste en 3 temps : direct → réparé → sauvetage objet par objet.
+ * Ne lève jamais : retourne les objets exploitables + compteurs.
+ */
+function parserTableauRobuste(texte: string): {
+  morceaux: unknown[];
+  tentes: number;
+} {
+  try {
+    const direct: unknown = JSON.parse(texte);
+    const arr = Array.isArray(direct) ? direct : [];
+    return { morceaux: arr, tentes: arr.length };
+  } catch {
+    /* passe à la réparation */
+  }
+  try {
+    const repare: unknown = JSON.parse(reparerJson(texte));
+    const arr = Array.isArray(repare) ? repare : [];
+    return { morceaux: arr, tentes: arr.length };
+  } catch {
+    /* passe au sauvetage */
+  }
+  const gardes: unknown[] = [];
+  const pieces = decouperObjets(reparerJson(texte));
+  for (const piece of pieces) {
+    try {
+      gardes.push(JSON.parse(piece));
+    } catch {
+      /* objet irrécupérable : ignoré et compté */
+    }
+  }
+  return { morceaux: gardes, tentes: pieces.length };
+}
+
 const SYSTEME = "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). CONTEXTE MÉTIER : AGL CI est une entreprise de TRANSIT ET LOGISTIQUE (manutention portuaire, transport de marchandises, douane, entreposage, gestion de son patrimoine immobilier et de ses infrastructures). Sa veille juridique ne porte que sur les textes qui affectent DIRECTEMENT ou INDIRECTEMENT son activité : réglementation du transport, du transit, de la douane, du commerce extérieur ; droit portuaire, maritime, ferroviaire, routier ; foncier et urbanisme UNIQUEMENT s'il concerne un terrain, un lotissement ou une zone où AGL CI ou une société liée est partie prenante (jamais les certificats fonciers de particuliers sans lien identifiable avec l'entreprise) ; droit du travail, fiscalité, environnement (HSE) applicables aux entreprises du secteur ; droit des sociétés/RCCM si l'entité concernée est AGL CI ou une filiale/partenaire connu. Un acte du Journal Officiel qui ne touche à AUCUN de ces domaines (ex : promotion d'un enseignant-chercheur, certificat foncier d'un particulier sans rapport avec l'entreprise, nomination d'un administrateur civil sans lien avec le secteur) N'EST PAS DE LA VEILLE JURIDIQUE PERTINENTE pour AGL CI, même s'il est bien présent dans le JO. RÈGLE FONCIER/CMPF : ne classer 'Directe' ou 'Indirecte' QUE si le nom d'AGL CI, d'une de ses filiales connues, ou d'un lotissement/zone logistique/portuaire apparaît dans l'acte ; par défaut, un certificat foncier concernant un particulier ou une société sans rapport apparent est 'Hors périmètre' — ne jamais assigner Patr Immo par réflexe sur tout ce qui touche au foncier. FIDÉLITÉ ABSOLUE : tu copies mot à mot les références officielles, les numéros d'articles et le contenu brut — tu ne tronques jamais, tu ne reformules jamais ces champs. MULTI-ACTES : le document peut contenir PLUSIEURS actes juridiquement distincts (un Journal Officiel = des dizaines d'actes) : tu dois systématiquement DÉDUIRE la nature de CHAQUE acte et recommander une BU par acte — sauf texte 'Hors périmètre', pour lequel tu ne suggères AUCUNE BU.";
 
-const TACHE = "TÂCHE : Analyse le document joint et extrais TOUS ses actes sous forme de TABLEAU JSON (un objet par acte détecté — schéma ci-dessous). CONSIGNE : ne fusionne JAMAIS deux actes distincts (deux arrêtés consécutifs, deux certificats fonciers consécutifs = deux objets séparés). Si le document contient 49 actes, le tableau doit contenir 49 objets. Schéma d'un acte : { \"natureTexte\": \"Décret | Arrêté | Avis d'enquête publique / commodo et incommodo | Certificat foncier individuel | Certificat foncier collectif | Certificat de mutation de propriété foncière | Récépissé de déclaration d'association | Formulaire de modification RCCM | Autre — nature de CET acte uniquement\", \"referenceTexte\": \"Référence officielle COMPLÈTE de CET acte — copie exacte sans tronquer\", \"article\": \"Articles concernés de CET acte copiés tels quels, ou N/A\", \"resumeTexte\": \"2-3 phrases sur CET acte uniquement\", \"libelleVersion\": \"Libellé complet de la version en vigueur\", \"lienHypertexte\": \"\", \"dateEntreeVigueur\": \"JJ/MM/AAAA ou chaîne vide\", \"contenuBrut\": \"Transcription brute complète de CET acte : COPIE EXACTE mot à mot — jamais tronquée, jamais inventée\", \"pertinenceTransit\": \"Directe | Indirecte | Hors périmètre\", \"buSuggeree\": \"DJ | DAF | DRH | Patr Immo | DQHSE | DIR_COMM_MARK | DILS — vide si Hors périmètre\" } Règle d'or : information absente = chaîne vide — n'invente JAMAIS.";
+const TACHE = "TÂCHE : Analyse le document joint et extrais TOUS ses actes sous forme de TABLEAU JSON (un objet par acte détecté — schéma ci-dessous). CONSIGNE : ne fusionne JAMAIS deux actes distincts (deux arrêtés consécutifs, deux certificats fonciers consécutifs = deux objets séparés). Si le document contient 49 actes, le tableau doit contenir 49 objets. JSON STRICT : dans les chaînes, n'utilise que des échappements JSON valides — aucun saut de ligne brut ni antislash isolé, sinon la réponse est rejetée. Schéma d'un acte : { \"natureTexte\": \"Décret | Arrêté | Avis d'enquête publique / commodo et incommodo | Certificat foncier individuel | Certificat foncier collectif | Certificat de mutation de propriété foncière | Récépissé de déclaration d'association | Formulaire de modification RCCM | Autre — nature de CET acte uniquement\", \"referenceTexte\": \"Référence officielle COMPLÈTE de CET acte — copie exacte sans tronquer\", \"article\": \"Articles concernés de CET acte copiés tels quels, ou N/A\", \"resumeTexte\": \"2-3 phrases sur CET acte uniquement\", \"libelleVersion\": \"Libellé complet de la version en vigueur\", \"lienHypertexte\": \"\", \"dateEntreeVigueur\": \"JJ/MM/AAAA ou chaîne vide\", \"contenuBrut\": \"Transcription brute complète de CET acte : COPIE EXACTE mot à mot — jamais tronquée, jamais inventée\", \"pertinenceTransit\": \"Directe | Indirecte | Hors périmètre\", \"buSuggeree\": \"DJ | DAF | DRH | Patr Immo | DQHSE | DIR_COMM_MARK | DILS — vide si Hors périmètre\" } Règle d'or : information absente = chaîne vide — n'invente JAMAIS.";
 
 interface Tranche {
   donnees: string;
@@ -198,19 +319,39 @@ export async function POST(req: Request) {
             },
           ];
 
-    // Extraction par tranche (un appel OpenRouter `google/gemini-2.5-flash` chacun).
+    // Extraction par tranche (un appel OpenRouter `google/gemini-2.5-flash`
+    // chacun). Une tranche en échec n'annule plus tout le lot (partiel + message).
     const bruts: ActeBrut[] = [];
+    let tranchesEchouees = 0;
+    let objetsIgnores = 0;
     for (const tranche of tranches) {
-      bruts.push(...(await extraireTranche(apiKey, tranche, TACHE, tranches.length)));
+      try {
+        const r = await extraireTranche(apiKey, tranche, TACHE, tranches.length);
+        bruts.push(...r.actes);
+        objetsIgnores += r.ignores;
+      } catch (e) {
+        tranchesEchouees += 1;
+        console.error(
+          `GEMINI_TRANCHE_ERREUR ${tranche.etiquette} :`,
+          e instanceof Error ? e.message : e,
+        );
+      }
+    }
+    if (bruts.length === 0) {
+      throw new Error(
+        tranchesEchouees > 0
+          ? `Aucun acte exploitable (${tranchesEchouees} tranche(s) en échec — voir logs GEMINI_TRANCHE_ERREUR).`
+          : "Aucun acte exploitable dans la réponse du modèle.",
+      );
     }
 
-/** Un appel d'extraction OpenRouter sur une tranche (tableau d'actes validés). */
+/** Un appel d'extraction OpenRouter sur une tranche (actes validés + compteurs). */
 async function extraireTranche(
   apiKey: string,
   tranche: Tranche,
   tache: string,
   tranchesTotal: number,
-): Promise<ActeBrut[]> {
+): Promise<{ actes: ActeBrut[]; recus: number; ignores: number }> {
   // Pièce jointe : PDF en partie `file` (base64), image en `image_url` (data URL).
   const piece =
     tranche.mime === "application/pdf"
@@ -274,8 +415,10 @@ async function extraireTranche(
   if (nettoye.startsWith("```")) {
     nettoye = nettoye.replace(/```json|```/g, "").trim();
   }
-  const parse: unknown = JSON.parse(nettoye);
-  const tableau = Array.isArray(parse) ? parse : [];
+  // Parse robuste : direct → réparé (antislash, contrôles) → sauvetage
+  // objet par objet. Plus de crash global sur un échappement invalide.
+  const { morceaux, tentes } = parserTableauRobuste(nettoye);
+  const tableau = morceaux;
   // Valide chaque objet (tolérant : champs manquants = "") ; ignore les invalides.
   const valides: ActeBrut[] = [];
   for (const o of tableau) {
@@ -283,9 +426,9 @@ async function extraireTranche(
     if (r.success) valides.push(r.data);
   }
   console.log(
-    `GEMINI_RAW_PARSE tranche=${tranche.etiquette} objets=${tableau.length} valides=${valides.length}`,
+    `GEMINI_RAW_PARSE tranche=${tranche.etiquette} objets=${tentes} valides=${valides.length}`,
   );
-  return valides;
+  return { actes: valides, recus: tentes, ignores: tentes - valides.length };
 }
 
     // Fusion + dédoublonnage (chevauchement d'1 page) sur nature|référence|article.
@@ -338,16 +481,23 @@ async function extraireTranche(
     });
 
     console.log(
-      `GEMINI_RESULT tranches=${tranches.length} bruts=${bruts.length} retenus=${actes.length}`,
+      `GEMINI_RESULT tranches=${tranches.length} echecs=${tranchesEchouees} bruts=${bruts.length} retenus=${actes.length} ignores=${objetsIgnores}`,
     );
+    const avertissement =
+      tranchesEchouees > 0 || objetsIgnores > 0
+        ? `Analyse partielle : ${tranchesEchouees} tranche(s) et ${objetsIgnores} objet(s) inexploitables — les ${actes.length} actes valides sont affichés.`
+        : null;
     return NextResponse.json({
       success: true,
       data: { actes },
+      ...(avertissement ? { avertissement } : {}),
       source: "gemini",
       meta: {
         tranches: tranches.length,
+        tranchesEchouees,
         actesBruts: bruts.length,
         actesRetenus: actes.length,
+        objetsIgnores,
       },
     });
   } catch (error: unknown) {
