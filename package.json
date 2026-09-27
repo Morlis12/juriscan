@@ -14,8 +14,6 @@
     "db:studio": "prisma studio"
   },
   "dependencies": {
-    "@ai-sdk/google": "^1.2.22",
-    "@google/generative-ai": "^0.24.1",
     "@prisma/client": "^6.19.3",
     "ai": "^4.3.19",
     "next": "16.3.6",

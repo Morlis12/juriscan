@@ -49,15 +49,16 @@ voir `src/lib/dataverse/tables.ts`).
 ## Stack
 
 Next.js 16 (App Router) · React 19 · Tailwind v4 · Prisma 6 + PostgreSQL ·
-`ai` + `@ai-sdk/google` (Gemini) · TypeScript strict · ESLint.
+`ai` · `zod` · `pdf-lib` · appel HTTP OpenRouter (`google/gemini-2.5-flash`) · TypeScript strict · ESLint.
 
 ## Démarrage
 
 ```bash
 npm install
 cp .env.example .env   # OBLIGATOIRE : renseigner DATABASE_URL et
-                       # GOOGLE_GENERATIVE_AI_API_KEY (sans clé, POST /api/analyse
-                       # répond 500 « Clé API manquante » — aucun mode démo)
+                       # OPENROUTER_API_KEY (analyse via OpenRouter,
+                       # modèle google/gemini-2.5-flash ; sans clé,
+                       # POST /api/analyse répond 500 — aucun mode démo)
 npm run db:push        # crée le schéma (7 tables) — ou : npm run db:migrate
 npm run dev            # http://localhost:3000 → redirige vers /dashboard
 ```

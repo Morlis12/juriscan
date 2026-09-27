@@ -1,19 +1,23 @@
 import { NextResponse } from "next/server";
-import { google } from "@ai-sdk/google";
-import { generateObject } from "ai";
 import { z } from "zod";
 import { PDFDocument } from "pdf-lib";
 
 /**
- * JuriScan AI — OCR multi-actes + recommandation BU (IA).
+ * JuriScan AI — OCR multi-actes + recommandation BU (IA via OpenRouter).
  *
- * Modèle : « 1 document déposé » = « N textes extraits » (un Journal Officiel
- * contient des dizaines d'actes juridiquement distincts — jamais fusionnés).
+ * Modèle : `google/gemini-2.5-flash` appelé en direct sur l'API OpenRouter
+ * (`POST https://openrouter.ai/api/v1/chat/completions`, clé
+ * `process.env.OPENROUTER_API_KEY`, `response_format: json_object`).
+ * (Le provider officiel exige ai v7+, incompatible avec ai v4 du projet —
+ * l'appel HTTP direct évite cette dépendance.)
+ *
+ * Modèle métier : « 1 document déposé » = « N textes extraits » (un Journal
+ * Officiel contient des dizaines d'actes juridiquement distincts — jamais
+ * fusionnés).
  * - PDF > ~10 pages : découpé en tranches de 5 pages avec chevauchement d'1
  *   page (anti-troncature), une extraction par tranche, puis fusion +
  *   dédoublonnage (clé nature|référence|article).
- * - Sortie JSON structurée (`generateObject`, schéma zod en tableau) : l'IA
- *   ne peut pas renvoyer un résumé global à la place des actes.
+ * - Chaque objet est validé (zod, tolérant) ; les invalides sont ignorés.
  * - Mapping schéma IA → colonnes existantes (jamais renommées) :
  *   libelleVersion → libelleApplicable, contenuBrut → contenu,
  *   buSuggeree → propositionBU (+ miroir departement),
@@ -33,18 +37,20 @@ import {
 } from "@/domain/veille";
 
 /** Schéma IA (noms du prompt) — un objet par acte détecté, jamais fusionnés. */
-const ActeBrutSchema = z.object({
-  natureTexte: z.string().describe("Nature de CET acte uniquement"),
-  referenceTexte: z.string().describe("Référence officielle complète de CET acte"),
-  article: z.string().describe("Articles concernés de CET acte, ou N/A"),
-  resumeTexte: z.string().describe("2-3 phrases sur CET acte uniquement"),
-  libelleVersion: z.string().describe("Libellé complet de la version en vigueur"),
-  lienHypertexte: z.string().describe("Lien hypertexte ou chaîne vide"),
-  dateEntreeVigueur: z.string().describe("Date au format JJ/MM/AAAA ou chaîne vide"),
-  contenuBrut: z.string().describe("Transcription brute complète de CET acte, jamais tronquée"),
-  pertinenceTransit: z.string().describe("Directe | Indirecte | Hors périmètre"),
-  buSuggeree: z.string().describe("BU suggérée ou vide si Hors périmètre"),
-});
+const ActeBrutSchema = z
+  .object({
+    natureTexte: z.string(),
+    referenceTexte: z.string(),
+    article: z.string(),
+    resumeTexte: z.string(),
+    libelleVersion: z.string(),
+    lienHypertexte: z.string(),
+    dateEntreeVigueur: z.string(),
+    contenuBrut: z.string(),
+    pertinenceTransit: z.string(),
+    buSuggeree: z.string(),
+  })
+  .partial();
 
 type ActeBrut = z.infer<typeof ActeBrutSchema>;
 
@@ -130,6 +136,8 @@ const TACHE = "TÂCHE : Analyse le document joint et extrais TOUS ses actes sous
 interface Tranche {
   donnees: string;
   etiquette: string;
+  /** Type MIME du morceau (application/pdf ou image/*). */
+  mime: string;
 }
 
 /** Découpe un PDF en tranches de 5 pages avec chevauchement d'1 page (> 10 pages). */
@@ -138,7 +146,7 @@ async function decouperPdf(base64Data: string): Promise<Tranche[]> {
     ignoreEncryption: true,
   });
   const n = pdf.getPageCount();
-  if (n <= 10) return [{ donnees: base64Data, etiquette: "intégral" }];
+  if (n <= 10) return [{ donnees: base64Data, etiquette: "intégral", mime: "application/pdf" }];
   const tranches: Tranche[] = [];
   const TAILLE = 5;
   const PAS = TAILLE - 1;
@@ -153,6 +161,7 @@ async function decouperPdf(base64Data: string): Promise<Tranche[]> {
     tranches.push({
       donnees: Buffer.from(octets).toString("base64"),
       etiquette: `pages ${debut + 1}-${fin}/${n}`,
+      mime: "application/pdf",
     });
     if (fin >= n) break;
   }
@@ -168,52 +177,116 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Aucune donnée de fichier reçue" }, { status: 400 });
     }
 
-    // Lecture de la clé d'environnement active sur Vercel
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    // Clé OpenRouter configurée sur Vercel (variable OPENROUTER_API_KEY).
+    const apiKey = process.env.OPENROUTER_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "Configuration : Clé API manquante sur le serveur." }, { status: 500 });
+      return NextResponse.json(
+        { error: "Configuration : Clé API OpenRouter manquante sur le serveur (OPENROUTER_API_KEY)." },
+        { status: 500 },
+      );
     }
 
     // Découpage anti-troncature (PDF longs : JO) — images : appel unique.
     const tranches: Tranche[] =
       mimeType === "application/pdf"
         ? await decouperPdf(base64Data)
-        : [{ donnees: base64Data, etiquette: "intégral" }];
+        : [
+            {
+              donnees: base64Data,
+              etiquette: "intégral",
+              mime: mimeType || "image/png",
+            },
+          ];
 
-    // Extraction structurée par tranche (un appel IA par tranche).
+    // Extraction par tranche (un appel OpenRouter `google/gemini-2.5-flash` chacun).
     const bruts: ActeBrut[] = [];
     for (const tranche of tranches) {
-      const { object } = await generateObject({
-        model: google("gemini-3.6-flash"),
-        output: "array",
-        schema: ActeBrutSchema,
-        temperature: 0.1,
-        maxTokens: 16000,
-        system: SYSTEME,
-        messages: [
-          {
-            role: "user",
-            content: [
-              {
-                type: "text",
-                text:
-                  tranches.length > 1
-                    ? `${TACHE} CONTEXTE DE TRANCHE : ceci est la tranche « ${tranche.etiquette} » d'un document plus long — extrais UNIQUEMENT les actes visibles dans CETTE tranche, sans deviner la suite ni répéter les autres tranches.`
-                    : TACHE,
-              },
-              { type: "image", image: tranche.donnees, mimeType: "application/pdf" },
-            ],
-          },
-        ],
-      });
-      // DIAGNOSTIC : réponse BRUTE avant tout traitement (voir logs Vercel).
-      const brutTranche = JSON.stringify(object);
-      console.log(
-        `GEMINI_RAW tranche=${tranche.etiquette} actes=${object.length} caracteres=${brutTranche.length}`,
-      );
-      console.log(`GEMINI_RAW_START ${tranche.etiquette}\n${brutTranche}\nGEMINI_RAW_END`);
-      bruts.push(...object);
+      bruts.push(...(await extraireTranche(apiKey, tranche, TACHE, tranches.length)));
     }
+
+/** Un appel d'extraction OpenRouter sur une tranche (tableau d'actes validés). */
+async function extraireTranche(
+  apiKey: string,
+  tranche: Tranche,
+  tache: string,
+  tranchesTotal: number,
+): Promise<ActeBrut[]> {
+  // Pièce jointe : PDF en partie `file` (base64), image en `image_url` (data URL).
+  const piece =
+    tranche.mime === "application/pdf"
+      ? {
+          type: "file",
+          file: {
+            filename: "document.pdf",
+            file_data: `data:application/pdf;base64,${tranche.donnees}`,
+          },
+        }
+      : {
+          type: "image_url",
+          image_url: { url: `data:${tranche.mime};base64,${tranche.donnees}` },
+        };
+  const reponse = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      "Content-Type": "application/json",
+      "HTTP-Referer": "https://juriscan.app",
+      "X-Title": "JuriScan AI",
+    },
+    body: JSON.stringify({
+      model: "google/gemini-2.5-flash",
+      temperature: 0.1,
+      max_tokens: 16000,
+      response_format: { type: "json_object" },
+      messages: [
+        { role: "system", content: SYSTEME },
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text:
+                tranchesTotal > 1
+                  ? `${tache} CONTEXTE DE TRANCHE : ceci est la tranche « ${tranche.etiquette} » d'un document plus long — extrais UNIQUEMENT les actes visibles dans CETTE tranche, sans deviner la suite ni répéter les autres tranches.`
+                  : tache,
+            },
+            piece,
+          ],
+        },
+      ],
+    }),
+  });
+  if (!reponse.ok) {
+    const detail = await reponse.text().catch(() => "");
+    throw new Error(`OpenRouter ${reponse.status} : ${detail.slice(0, 500)}`);
+  }
+  const payload = (await reponse.json()) as {
+    choices?: { message?: { content?: unknown } }[];
+  };
+  const contenu = payload?.choices?.[0]?.message?.content;
+  if (typeof contenu !== "string" || !contenu.trim()) {
+    throw new Error("Réponse vide du modèle.");
+  }
+  // DIAGNOSTIC : réponse BRUTE avant tout traitement (voir logs Vercel).
+  console.log(`GEMINI_RAW tranche=${tranche.etiquette} caracteres=${contenu.length}`);
+  console.log(`GEMINI_RAW_START ${tranche.etiquette}\n${contenu}\nGEMINI_RAW_END`);
+  let nettoye = contenu.trim();
+  if (nettoye.startsWith("```")) {
+    nettoye = nettoye.replace(/```json|```/g, "").trim();
+  }
+  const parse: unknown = JSON.parse(nettoye);
+  const tableau = Array.isArray(parse) ? parse : [];
+  // Valide chaque objet (tolérant : champs manquants = "") ; ignore les invalides.
+  const valides: ActeBrut[] = [];
+  for (const o of tableau) {
+    const r = ActeBrutSchema.safeParse(o);
+    if (r.success) valides.push(r.data);
+  }
+  console.log(
+    `GEMINI_RAW_PARSE tranche=${tranche.etiquette} objets=${tableau.length} valides=${valides.length}`,
+  );
+  return valides;
+}
 
     // Fusion + dédoublonnage (chevauchement d'1 page) sur nature|référence|article.
     const vus = new Set<string>();
@@ -278,7 +351,7 @@ export async function POST(req: Request) {
       },
     });
   } catch (error: unknown) {
-    console.error("Erreur critique OCR Vercel AI SDK :", error);
+    console.error("Erreur critique OCR OpenRouter :", error);
     const message = error instanceof Error ? error.message : "Erreur interne de traitement";
     return NextResponse.json({ error: message }, { status: 500 });
   }
