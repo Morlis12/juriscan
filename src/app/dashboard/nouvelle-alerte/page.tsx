@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { DepartementCode, NatureTexte } from "@/domain/veille";
 import { DEPARTEMENT_CODES, NATURES_TEXTE, PERTINENCE_TRANSIT } from "@/domain/veille";
@@ -15,6 +14,7 @@ import {
 import { peutCreerAlerte } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
+import { NavOnglets } from "@/components/NavOnglets";
 
 type ModeSaisie = "auto" | "manuel";
 
@@ -523,21 +523,10 @@ export default function NouvelleAlertePage() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <NavOnglets actif="assignation" />
+            <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
             <SelecteurBUConnectee />
-            <Link
-              href="/dashboard/memo"
-              title="Mémo : comprendre les indicateurs et les règles"
-              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
-            >
-              ⓘ Mémo
-            </Link>
-            <Link
-              href="/dashboard"
-              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
-            >
-              ← Retour tableau de bord
-            </Link>
           </div>
         </div>
       </header>

@@ -14,6 +14,7 @@ import { BUILD_DATE_ISO } from "@/generated/build-info";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
+import { NavOnglets } from "@/components/NavOnglets";
 import {
   MOCK_ACTIONS,
   MOCK_ALERTES,
@@ -473,44 +474,13 @@ export default function DashboardPage() {
               <p className="text-xs capitalize text-slate-300">{dateStr}</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            <NavOnglets actif="pilotage" rejets={nbRejets} />
+            <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
             <span className="font-mono tabular-nums text-slate-100">
               {timeStr}
             </span>
             <SelecteurBUConnectee />
-            {/* Commandes de page — uniquement en haut (jamais dupliquées au milieu). */}
-            <Link
-              href="/dashboard/rejets"
-              className="rounded-full bg-red-500 px-4 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-red-600"
-            >
-              ⚠ Rejets{nbRejets > 0 ? ` (${nbRejets})` : ""}
-            </Link>
-            <Link
-              href="/dashboard/approbations"
-              className="rounded-full bg-brand-gold px-4 py-1.5 text-xs font-bold text-brand-blue shadow transition-colors hover:brightness-95"
-            >
-              Approbations métier →
-            </Link>
-            <Link
-              href="/dashboard/nouvelle-alerte"
-              className="rounded-full bg-white px-4 py-1.5 text-xs font-bold text-brand-blue shadow transition-colors hover:bg-brand-gold"
-            >
-              ➕ Nouvelle Alerte
-            </Link>
-            <Link
-              href="/dashboard/historique"
-              title="Chaque modification est consultable ici"
-              className="rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
-            >
-              🕘 Historique
-            </Link>
-            <Link
-              href="/dashboard/memo"
-              title="Mémo : comprendre les indicateurs et les règles"
-              className="rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
-            >
-              ⓘ Mémo
-            </Link>
             {derniereMaj && (
               <span
                 title={`Fraîcheur de ce que vous regardez — données affichées${dureeDepuis(derniereMaj) ? ` (il y a ${dureeDepuis(derniereMaj)})` : ""} · application mise à jour le ${formaterDateHeureFR(BUILD_DATE_ISO)}`}

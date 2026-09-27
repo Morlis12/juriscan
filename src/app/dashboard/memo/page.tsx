@@ -1,5 +1,6 @@
-import Link from "next/link";
 import { LogoAGL } from "@/components/LogoAGL";
+import { NavOnglets } from "@/components/NavOnglets";
+import { SelecteurBUConnectee } from "@/components/ContexteBU";
 
 /**
  * AGL JuriCompliance — Mémo d'utilisation (guide complet, langage utilisateur).
@@ -258,12 +259,11 @@ export default function MemoPage() {
               </p>
             </div>
           </div>
-          <Link
-            href="/dashboard"
-            className="rounded-full bg-brand-gold px-4 py-1.5 text-sm font-bold text-brand-blue transition-colors hover:brightness-95"
-          >
-              ← Pilotage de veille
-          </Link>
+          <div className="flex flex-wrap items-center gap-3">
+            <NavOnglets actif="memo" />
+            <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
+            <SelecteurBUConnectee />
+          </div>
         </div>
       </header>
 

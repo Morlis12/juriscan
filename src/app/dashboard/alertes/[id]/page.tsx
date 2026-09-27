@@ -8,6 +8,7 @@ import { NATURES_TEXTE, PERTINENCE_TRANSIT } from "@/domain/veille";
 import { estCentrale, messageAccesRefuse, peutOuvrirFiche } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
+import { NavOnglets } from "@/components/NavOnglets";
 import type { JournalEntree } from "@/domain/historique";
 import { HISTORIQUE_ACTION_LABELS } from "@/domain/historique";
 import { HISTORIQUE_DEMO } from "@/data/historique-demo";
@@ -300,27 +301,10 @@ export default function ModifierAlertePage() {
               <p className="font-mono text-xs text-slate-300">{params.id}</p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <NavOnglets historiqueHref={`/dashboard/historique?fiche=${encodeURIComponent(params.id)}`} />
+            <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
             <SelecteurBUConnectee />
-            <Link
-              href={`/dashboard/historique?fiche=${encodeURIComponent(params.id)}`}
-              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
-            >
-              🕘 Historique
-            </Link>
-            <Link
-              href="/dashboard/memo"
-              title="Mémo : comprendre les indicateurs et les règles"
-              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
-            >
-              ⓘ Mémo
-            </Link>
-            <Link
-              href="/dashboard"
-              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
-            >
-              ← Retour tableau de bord
-            </Link>
           </div>
         </div>
       </header>

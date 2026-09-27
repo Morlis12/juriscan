@@ -13,6 +13,7 @@ import {
 import { HISTORIQUE_DEMO } from "@/data/historique-demo";
 import { SelecteurBUConnectee, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
+import { NavOnglets } from "@/components/NavOnglets";
 
 /**
  * AGL JuriCompliance — Historique des modifications (traçabilité SCD2, consultable).
@@ -100,21 +101,10 @@ function HistoriqueContenu() {
               </p>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-3">
+            <NavOnglets actif="historique" />
+            <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
             <SelecteurBUConnectee />
-            <Link
-              href="/dashboard/memo"
-              title="Mémo : comprendre les indicateurs et les règles"
-              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
-            >
-              ⓘ Mémo
-            </Link>
-            <Link
-              href="/dashboard"
-              className="rounded-full bg-brand-gold px-4 py-1.5 text-sm font-bold text-brand-blue transition-colors hover:brightness-95"
-            >
-              ← Pilotage de veille
-            </Link>
           </div>
         </div>
       </header>
