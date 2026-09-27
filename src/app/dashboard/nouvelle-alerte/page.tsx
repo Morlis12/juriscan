@@ -416,10 +416,9 @@ export default function NouvelleAlertePage() {
               </div>
             )}
             <p className="mt-3 rounded-lg bg-brand-gold/15 px-3 py-2 text-[11px] leading-relaxed text-brand-blue">
-              Analyse sécurisée (API REST) : le navigateur encode en Base64 pur (FileReader) et{" "}
-              <code className="font-mono">POST /api/analyse</code> (
-              <code className="font-mono">src/app/api/analyse/route.ts</code>) retourne l&apos;extraction du JO CI
-              du 9 juillet 2026, sans appel externe.
+              Votre document est analysé en toute sécurité : déposez le PDF ou
+              l&apos;image, lancez l&apos;analyse, puis vérifiez les informations
+              extraites avant d&apos;assigner le texte aux BU concernées.
             </p>
           </div>
           )}
