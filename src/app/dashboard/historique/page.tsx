@@ -15,7 +15,7 @@ import { SelecteurBUConnectee, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 
 /**
- * JuriScan AI — Historique des modifications (traçabilité SCD2, consultable).
+ * AGL JuriCompliance — Historique des modifications (traçabilité SCD2, consultable).
  * Lit GET /api/historique (VeilleJournal) : qui / quoi / quand / par qui.
  * Filtres : BU auteur, action tracée, recherche libre (N° ordre, BU fiche,
  * détails). Repli silencieux si base absente (prototype sans DB).

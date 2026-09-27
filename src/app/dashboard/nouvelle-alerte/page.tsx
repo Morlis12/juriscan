@@ -237,7 +237,7 @@ export default function NouvelleAlertePage() {
   /** Aperçu du panneau « Texte extrait » pour l'acte affiché. */
   function apercuActe(a: ActeAnalyse): string {
     return [
-      `—— Analyse IA JuriScan : ${file?.name ?? brouillon.fileName ?? "saisie manuelle"} ——`,
+      `—— Analyse IA AGL JuriCompliance : ${file?.name ?? brouillon.fileName ?? "saisie manuelle"} ——`,
       "",
       `Acte ${a.idActe + 1}/${actes?.length ?? 1} · ${a.numeroOrdre || "N° à attribuer"}`,
       `Nature déduite : ${a.natureTexte || "—"}`,
@@ -517,7 +517,7 @@ export default function NouvelleAlertePage() {
           <div className="flex items-center gap-3">
             <LogoAGL />
             <div>
-              <p className="text-lg font-bold leading-tight">Nouvelle alerte — Analyse IA JuriScan</p>
+              <p className="text-lg font-bold leading-tight">Nouvelle alerte — Analyse IA AGL JuriCompliance</p>
               <p className="text-xs text-slate-300">
                 Dépôt manuel aujourd&apos;hui · captation Outlook / Power Automate demain
               </p>
@@ -682,7 +682,7 @@ export default function NouvelleAlertePage() {
               disabled={!file || loading}
               className="mt-4 w-full rounded-xl bg-brand-blue px-5 py-3 text-sm font-bold text-white shadow transition-all hover:bg-brand-blue/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {loading ? "Analyse IA en cours…" : "Lancer l'Analyse IA JuriScan"}
+              {loading ? "Analyse IA en cours…" : "Lancer l'Analyse IA AGL JuriCompliance"}
             </button>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <button
@@ -719,7 +719,7 @@ export default function NouvelleAlertePage() {
           {mode === "auto" && (
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-base font-bold text-brand-blue">Texte extrait (JuriScan)</h2>
+              <h2 className="text-base font-bold text-brand-blue">Texte extrait (AGL JuriCompliance)</h2>
               {source && (
                 <span
                   className={`rounded-full px-3 py-1 text-[11px] font-bold ${
@@ -823,7 +823,7 @@ export default function NouvelleAlertePage() {
             <div className="px-5 py-10 text-center text-sm text-slate-400">
               <p className="mx-auto max-w-sm">
                 Aucun résultat pour l&apos;instant. Chargez un PDF puis cliquez sur{" "}
-                <span className="font-semibold text-brand-blue">« Lancer l&apos;Analyse IA JuriScan »</span>, ou
+                <span className="font-semibold text-brand-blue">« Lancer l&apos;Analyse IA AGL JuriCompliance »</span>, ou
                 basculez sur <span className="font-semibold text-brand-blue">« ✍️ Saisie Manuelle Libre »</span> : chaque
                 acte détecté (N° d&apos;ordre, Nature, Référence, Résumé, Libellé applicable…) apparaîtra ici avec sa
                 navigation « Acte X / N » et ses BU à cocher. La conformité (preuves, actions, statut, responsable,

@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Lecture de l'auteur côté serveur (pont prototype → Entra ID).
+ * AGL JuriCompliance — Lecture de l'auteur côté serveur (pont prototype → Entra ID).
  *
  * Prototype : l'auteur vient des en-têtes `x-bu-connectee` / `x-user-email`
  * posés par le client (`entetesAuteur`). Migration Microsoft : remplacer le

@@ -5,7 +5,7 @@ import type {
 import { CONFORMITE_POURCENTAGE } from "@/domain/veille";
 
 /**
- * JuriScan AI — Jeu de données simulé pour le tableau de bord.
+ * AGL JuriCompliance — Jeu de données simulé pour le tableau de bord.
  * 30 alertes réparties sur les 8 départements + actions d'amélioration.
  * Remplace l'alimentation SQL/Power Pages en attendant la connexion réelle.
  * Les types restent alignés sur `src/domain/veille.ts` (Dataverse-ready).

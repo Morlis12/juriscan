@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Traçabilité SCD Type 2 (découplé de Next.js / Prisma).
+ * AGL JuriCompliance — Traçabilité SCD Type 2 (découplé de Next.js / Prisma).
  *
  * Exigence : chaque modification est tracée et l'historique est consultable.
  * Implémentation SCD (Slowly Changing Dimension) de type 2 :

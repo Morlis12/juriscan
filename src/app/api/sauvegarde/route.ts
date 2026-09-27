@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * JuriScan AI — Sauvegarde finale des fiches validées (bouton vert).
+ * AGL JuriCompliance — Sauvegarde finale des fiches validées (bouton vert).
  *
  * POST /api/sauvegarde ← 21 colonnes du formulaire → Prisma :
  * - `{ actes: [...] }` (multi-actes IA) → N `VeilleAlerte` (une par acte,

@@ -8,10 +8,10 @@ This block is written and re-added by `next dev` — verify at `node_modules/nex
 
 <!-- END:nextjs-agent-rules -->
 
-# JuriScan AI — Règles de projet
+# AGL JuriCompliance — Règles de projet
 
 ## Contexte
-- Projet : JuriScan AI, prototype fonctionnel démarré sur base vierge (Next.js + Tailwind v4).
+- Projet : AGL JuriCompliance, prototype fonctionnel démarré sur base vierge (Next.js + Tailwind v4).
 - Cible : penser chaque ligne pour une migration native vers **Microsoft Power Pages** et **Dataverse**.
 - Conséquences : logique métier découplée de Next.js, schéma de données documenté et portable, pas de dépendance bloquante pour Dataverse.
 

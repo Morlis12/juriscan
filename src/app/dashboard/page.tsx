@@ -469,7 +469,7 @@ export default function DashboardPage() {
             <LogoAGL />
             <div>
               <p className="text-lg font-bold leading-tight">
-                AGL - JuriScan AI · Pilotage Juridique
+                AGL JuriCompliance · Pilotage Juridique
               </p>
               <p className="text-xs capitalize text-slate-300">{dateStr}</p>
             </div>

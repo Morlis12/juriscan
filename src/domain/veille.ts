@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Couche domaine (découplée de Next.js / Prisma).
+ * AGL JuriCompliance — Couche domaine (découplée de Next.js / Prisma).
  *
  * Ces types sont la référence métier portable vers Microsoft Dataverse :
  * - `User` → table Dataverse `User` (acteurs par département)
@@ -93,7 +93,7 @@ export const CONFORMITE_STATUTS = Object.keys(
 ) as ConformiteStatut[];
 
 /**
- * Workflow à double validation JuriScan (IA + Juridique) × JuriDesk (BU).
+ * Workflow à double validation AGL JuriCompliance (IA + Juridique) × JuriDesk (BU).
  * Portable Dataverse : OptionSet `FluxStatut` sur la table `VeilleFiche`.
  * - ATTENTE_VALIDATION_JURIDIQUE : l'IA a fait l'OCR et proposé la BU, le juridique doit valider.
  * - ATTENTE_APPROBATION_METIER : le juridique a validé, la BU doit approuver ou rejeter.
@@ -200,7 +200,7 @@ export interface DomainVeilleFiche {
   preuvesExistantes: string | null;
   statutConformite: ConformiteStatut;
   preuveDifferee: string | null;
-  /** Position dans le workflow à double validation JuriScan × JuriDesk. */
+  /** Position dans le workflow à double validation AGL JuriCompliance × JuriDesk. */
   fluxStatut: FluxStatut;
   /** Document de preuve joint (nom, MIME, base64) — téléversé par la BU. */
   preuveFichierNom: string | null;

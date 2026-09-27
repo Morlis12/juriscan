@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * JuriScan AI — API Grille de Veille (persistante, Prisma + PostgreSQL).
+ * AGL JuriCompliance — API Grille de Veille (persistante, Prisma + PostgreSQL).
  *
  * - POST /api/veille : enregistre la fiche validée (moteur partagé
  *   `src/lib/veille-save.ts`, aussi exposé via POST /api/sauvegarde).

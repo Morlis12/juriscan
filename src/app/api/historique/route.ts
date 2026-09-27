@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * JuriScan AI — Journal consultable (SCD2).
+ * AGL JuriCompliance — Journal consultable (SCD2).
  *
  * GET /api/historique?ficheId=&alerteId=&bu=&action=&take=
  * Liste les modifications tracées (plus récentes d'abord) avec le N° d'ordre

@@ -184,7 +184,7 @@ export default function RejetsPage() {
             <LogoAGL />
             <div>
               <p className="text-lg font-bold leading-tight">
-                Rejets à retraiter — JuriScan
+                Rejets à retraiter — AGL JuriCompliance
               </p>
               <p className="text-xs text-slate-300">
                 Les BU ont refusé : modifiez puis renvoyez vers la BU

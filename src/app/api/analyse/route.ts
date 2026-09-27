@@ -3,7 +3,7 @@ import { z } from "zod";
 import { PDFDocument } from "pdf-lib";
 
 /**
- * JuriScan AI — OCR multi-actes + recommandation BU (IA via OpenRouter).
+ * AGL JuriCompliance — OCR multi-actes + recommandation BU (IA via OpenRouter).
  *
  * Modèle : `google/gemini-2.5-flash` appelé en direct sur l'API OpenRouter
  * (`POST https://openrouter.ai/api/v1/chat/completions`, clé
@@ -417,8 +417,8 @@ async function appelerOpenRouter(
       headers: {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        "HTTP-Referer": "https://juriscan.app",
-        "X-Title": "JuriScan AI",
+        "HTTP-Referer": "https://agl-juricompliance.app",
+        "X-Title": "AGL JuriCompliance",
       },
       body: corps,
     });

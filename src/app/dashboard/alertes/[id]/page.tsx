@@ -23,7 +23,7 @@ import {
 import { MOCK_ALERTES } from "@/data/veille-mock";
 
 /**
- * JuriScan AI — Modification d'une fiche (21 colonnes, toujours éditable).
+ * AGL JuriCompliance — Modification d'une fiche (21 colonnes, toujours éditable).
  * - Ligne persistée (`db-…`) : GET /api/veille/[id] (findUnique) → PUT → /dashboard.
  * - Ligne de démonstration (`mock-*`) : pré-remplissage local depuis les mocks,
  *   sauvegarde simulée (800ms) → /dashboard avec message de succès.
@@ -296,7 +296,7 @@ export default function ModifierAlertePage() {
           <div className="flex items-center gap-3">
             <LogoAGL />
             <div>
-              <p className="text-lg font-bold leading-tight">Modifier la fiche — JuriScan AI</p>
+              <p className="text-lg font-bold leading-tight">Modifier la fiche — AGL JuriCompliance</p>
               <p className="font-mono text-xs text-slate-300">{params.id}</p>
             </div>
           </div>

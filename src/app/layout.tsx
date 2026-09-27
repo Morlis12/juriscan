@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "AGL - JuriScan AI",
+  title: "AGL JuriCompliance",
   description: "Veille réglementaire AGL — prototype Power Pages / Dataverse ready",
 };
 

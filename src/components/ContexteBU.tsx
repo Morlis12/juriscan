@@ -5,7 +5,7 @@ import { DEPARTEMENTS, type DepartementCode } from "@/domain/veille";
 import { CLE_BU_CONNECTEE, CLE_EMAIL_CONNECTE, estCentrale } from "@/domain/acces";
 
 /**
- * JuriScan AI — BU connectée (prototype localStorage).
+ * AGL JuriCompliance — BU connectée (prototype localStorage).
  *
  * Le sélecteur simule la connexion métier : seule la BU connectée peut
  * modifier / répondre à ses assignations (les autres fiches restent en

@@ -1,4 +1,4 @@
-# AGL — JuriScan AI
+# AGL — AGL JuriCompliance
 
 Veille réglementaire AGL : l'IA extrait les textes (PDF / image), la **centrale**
 assigne aux BU, chaque **BU pilote sa conformité** en vase clos, et **chaque
@@ -209,8 +209,8 @@ Aucune colonne ajoutée — réutilisation du modèle SCD2 (tables concernées :
 - Activer l'**Auditing natif** + recréer `VeilleJournal` (lecture Power Pages) et
   les tables `*Version` (colonnes `validFrom`/`validTo`/`isCurrent`/`version`).
 - Sécurité : 1 Business Unit + 1 Team par BU (+ BU « Centrale ») ; rôle
-  **JuriScan BU** (lecture globale, écriture si `departement` == équipe — DJ
-  incluse) ; rôle **JuriScan Centrale** (création, assignation, flux,
+  **AGL JuriCompliance BU** (lecture globale, écriture si `departement` == équipe — DJ
+  incluse) ; rôle **AGL JuriCompliance Centrale** (création, assignation, flux,
   réassignation ; écriture bloquée sur la conformité BU).
 - Authentification : remplacer le sélecteur prototype par l'utilisateur
   **Entra ID** (Web Roles → BU) ; `src/lib/acces.ts` (`lireAuteur`) est le seul
@@ -223,4 +223,4 @@ Aucune colonne ajoutée — réutilisation du modèle SCD2 (tables concernées :
 
 ## Support
 
-`JuriScan-AI-Presentation.pptx` (racine) : présentation du prototype.
+`AGL-JuriCompliance-Presentation.pptx` (racine) : présentation du prototype.

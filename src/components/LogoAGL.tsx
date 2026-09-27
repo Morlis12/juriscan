@@ -1,7 +1,7 @@
 import Image from "next/image";
 
 /**
- * JuriScan AI — Logo officiel AGL (`public/logo-agl.png`).
+ * AGL JuriCompliance — Logo officiel AGL (`public/logo-agl.png`).
  *
  * Emblème unique des en-têtes (remplace les badges « AGL » dessinés).
  * Le fond du PNG est mesuré à #1C3359 (= `brand-blue`) : posé sur un

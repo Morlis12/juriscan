@@ -40,7 +40,7 @@ enum ConformiteStatut {
   PARTIELLEMENT_75
 }
 
-// 2b. WORKFLOW À DOUBLE VALIDATION JuriScan (IA) × JuriDesk (BU).
+// 2b. WORKFLOW À DOUBLE VALIDATION AGL JuriCompliance (IA) × JuriDesk (BU).
 // - ATTENTE_VALIDATION_JURIDIQUE : l'IA a fait l'OCR et proposé la BU, le juridique doit valider.
 // - ATTENTE_APPROBATION_METIER : le juridique a validé, la BU doit approuver ou rejeter.
 // - APPROUVE_METIER : la BU a validé et pilote sa conformité (actions, délais, taux 0-100 %).
@@ -89,7 +89,7 @@ model VeilleFiche {
   preuvesExistantes String?          @db.Text // Preuves de conformité existantes
   statutConformite  ConformiteStatut @default(NON_CONFORME_0) // Statut options
   preuveDifferee    String?          @db.Text // Preuve de conformité différée
-  // Position dans le workflow à double validation (JuriScan × JuriDesk).
+  // Position dans le workflow à double validation (AGL JuriCompliance × JuriDesk).
   fluxStatut        FluxStatut       @default(ATTENTE_VALIDATION_JURIDIQUE)
   // Document de preuve joint aux "Preuves de conformité existantes"
   // (PDF/image, base64 — Dataverse : colonne Fichier sur la table).

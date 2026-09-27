@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Contrôle d'accès strict par BU (découplé de Next.js / Prisma).
+ * AGL JuriCompliance — Contrôle d'accès strict par BU (découplé de Next.js / Prisma).
  *
  * Règle métier : une BU connectée ne change QUE les informations de sa BU,
  * jamais celles des autres — y compris DJ, qui est une BU normale cloisonnée.
@@ -20,9 +20,9 @@
  *
  * Portabilité Microsoft :
  * - Dataverse : 1 Business Unit par BU (+ 1 BU « Centrale »), 1 Team par BU,
- *   Security Role « JuriScan BU » (lecture globale, écriture si `departement`
+ *   Security Role « AGL JuriCompliance BU » (lecture globale, écriture si `departement`
  *   == équipe de l'utilisateur — DJ incluse, sans exception), Security Role
- *   « JuriScan Centrale » (création, assignation, transitions de flux,
+ *   « AGL JuriCompliance Centrale » (création, assignation, transitions de flux,
  *   réassignation ; écriture bloquée sur les champs conformité BU).
  * - Power Pages : remplacer `BUConnectee` (prototype localStorage) par
  *   l'utilisateur Entra ID et les Web Roles ; le serveur lira le JWT au lieu

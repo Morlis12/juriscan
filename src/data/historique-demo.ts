@@ -4,7 +4,7 @@ import { JALONS_VIDES, type JalonsFiche } from "@/domain/jalons";
 import { MOCK_ALERTES } from "@/data/veille-mock";
 
 /**
- * JuriScan AI — Historique de démonstration (sans base de données).
+ * AGL JuriCompliance — Historique de démonstration (sans base de données).
  *
  * Les fiches visibles (`mock-*`) ne sont pas persistées : aucun journal réel
  * n'existe pour elles. Ce jeu rejoue un historique plausible (création

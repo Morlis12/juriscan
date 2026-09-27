@@ -2,7 +2,7 @@ import Link from "next/link";
 import { LogoAGL } from "@/components/LogoAGL";
 
 /**
- * JuriScan AI — Mémo d'utilisation (guide complet, langage utilisateur).
+ * AGL JuriCompliance — Mémo d'utilisation (guide complet, langage utilisateur).
  * Couvre toutes les fonctions : nouvelle alerte multi-actes, reprise du
  * travail en cours, indicateurs, workflow, droits par BU, pertinence transit,
  * dates, historique, approbations et rejets.
@@ -252,7 +252,7 @@ export default function MemoPage() {
           <div className="flex items-center gap-3">
             <LogoAGL />
             <div>
-              <p className="text-lg font-bold leading-tight">Mémo — mode d&apos;emploi JuriScan</p>
+              <p className="text-lg font-bold leading-tight">Mémo — mode d&apos;emploi AGL JuriCompliance</p>
               <p className="text-xs text-slate-300">
                 Indicateurs, workflow, droits, dates et historique expliqués
               </p>

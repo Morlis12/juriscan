@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Horodatage du build (fraîcheur de l'application).
+ * AGL JuriCompliance — Horodatage du build (fraîcheur de l'application).
  *
  * Exécuté via `npm run prebuild` (avant `dev` et `build`, y compris sur
  * Vercel) : écrit `src/generated/build-info.ts` avec la date-heure locale

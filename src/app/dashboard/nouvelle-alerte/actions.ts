@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Ancien point d'entrée Server Action SUPPRIMÉ.
+ * AGL JuriCompliance — Ancien point d'entrée Server Action SUPPRIMÉ.
  *
  * Historique : `analyserDocumentAlerte(file: File)` / `FormData` puis
  * `analyserDocumentAlerte(base64, mimeType)` faisaient transiter le document

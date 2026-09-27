@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * JuriScan AI — Historique d'une fiche (journal + versions SCD2).
+ * AGL JuriCompliance — Historique d'une fiche (journal + versions SCD2).
  *
  * GET /api/veille/[id]/historique : id de route `db-<alerteId>-<ficheId>`.
  * Retourne le journal de la fiche (plus récent d'abord) et les snapshots

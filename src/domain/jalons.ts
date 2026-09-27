@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Jalons de dates (découplé de Next.js / Prisma).
+ * AGL JuriCompliance — Jalons de dates (découplé de Next.js / Prisma).
  *
  * Exigence d'affichage :
  * - Rejets : date d'assignation + date du rejet.

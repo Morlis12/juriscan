@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Écriture SCD Type 2 (serveur uniquement, Prisma).
+ * AGL JuriCompliance — Écriture SCD Type 2 (serveur uniquement, Prisma).
  *
  * Utilisé par PUT / PATCH / POST : fige l'ancienne image dans les tables
  * `*Version` (validTo = now), incrémente `version` sur la ligne courante,

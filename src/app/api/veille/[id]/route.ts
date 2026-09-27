@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 
 /**
- * JuriScan AI — Fiche individuelle persistée (cloisonnement strict + SCD2).
+ * AGL JuriCompliance — Fiche individuelle persistée (cloisonnement strict + SCD2).
  *
  * - GET /api/veille/[id] : alerte + fiche + action (21 colonnes, lecture pour tous).
  * - PUT /api/veille/[id] : texte source + réassignation = CENTRALE uniquement ;

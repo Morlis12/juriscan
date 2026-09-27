@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Moteur d'enregistrement partagé (Prisma, serveur uniquement).
+ * AGL JuriCompliance — Moteur d'enregistrement partagé (Prisma, serveur uniquement).
  *
  * Utilisé par POST /api/veille et POST /api/sauvegarde (centrale uniquement) :
  * insère les 21 colonnes validées du formulaire → `VeilleAlerte.create`

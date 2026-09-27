@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Domaine « Nouvelle alerte » (pur, découplé de Next.js).
+ * AGL JuriCompliance — Domaine « Nouvelle alerte » (pur, découplé de Next.js).
  *
  * Rôle : définir les colonnes métier des lignes d'alerte analysées.
  * Zéro donnée fictive : l'extraction vient exclusivement de POST /api/analyse

@@ -1,5 +1,5 @@
 /**
- * JuriScan AI — Mapping Dataverse (portable, sans dépendance Prisma/Next.js).
+ * AGL JuriCompliance — Mapping Dataverse (portable, sans dépendance Prisma/Next.js).
  *
  * Recréation cible dans Dataverse / Power Pages :
  * - 7 tables : User, VeilleAlerte, VeilleFiche, VeilleAction (+ SCD2 :
@@ -14,8 +14,8 @@
  *   cochée (cases à cocher de l'écran nouvelle-alerte) ; le pilotage regroupe
  *   par `numeroOrdre` et affiche la conformité de chaque BU.
  * - Cloisonnement BU strict : 1 Business Unit + 1 Team par BU ; Security Role
- *   « JuriScan BU » (lecture globale, écriture si `departement` == équipe —
- *   DJ incluse, sans exception), « JuriScan Centrale » (CENTRAL_VRG :
+ *   « AGL JuriCompliance BU » (lecture globale, écriture si `departement` == équipe —
+ *   DJ incluse, sans exception), « AGL JuriCompliance Centrale » (CENTRAL_VRG :
  *   création, assignation, transitions de flux, réassignation ; écriture
  *   bloquée sur les champs conformité BU). Voir `src/domain/acces.ts`.
  * - Traçabilité SCD2 : activer l'Auditing natif + recréer `VeilleJournal`
