@@ -110,6 +110,8 @@ prisma/schema.prisma            # 7 modèles : User, VeilleAlerte, VeilleFiche (
                                 # VeilleAction (+SCD2), VeilleFicheVersion,
                                 # VeilleActionVersion, VeilleJournal
 public/logo-agl.png             # logo officiel AGL (fond #1C3359)
+scripts/build-info.mjs          # horodate chaque build/dev → src/generated/build-info.ts
+                                # (date de l'application, ignoré par Git)
 ```
 
 ## Accès — cloisonnement strict par BU
@@ -161,9 +163,13 @@ Aucune colonne ajoutée — réutilisation du modèle SCD2 (tables concernées :
 | Rejet | journal `REJET_BU` (dernier) | simulé |
 | Approbation | journal `APPROBATION_BU` (dernier) | simulé |
 | Dernière modif (= état affiché) | `VeilleFiche.updatedAt` | dernière entrée du journal de la fiche |
+| Application (version affichée) | `BUILD_DATE_ISO` (généré à chaque build/dev, `src/generated/`) | idem |
 
 - `GET /api/veille` joint ces jalons à chaque fiche (`jalons : { valideeLe,
   renvoyeeLe, rejeteeLe, approuveeLe }`, une seule requête journal).
+- La pastille « Dernière mise à jour » (barre du haut, extrême droite) affiche
+  la plus récente des fiches affichées (date + heure) ; son survol rappelle la
+  fraîcheur : ancienneté des données + date de l'application (`BUILD_DATE_ISO`).
 - Rejets : « Assignée le … · Rejetée le … (il y a N jours) ».
 - Approbations : « Assignée le … · ⏳ En attente depuis N jours (depuis le …) ».
 - Suivi des textes : colonne « Dernière modif » par texte (plus récente des

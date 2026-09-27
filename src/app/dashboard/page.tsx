@@ -10,6 +10,7 @@ import {
 } from "@/domain/veille";
 import { messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
 import { dureeDepuis, formaterDateFR, formaterDateHeureFR } from "@/domain/jalons";
+import { BUILD_DATE_ISO } from "@/generated/build-info";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
@@ -506,7 +507,7 @@ export default function DashboardPage() {
             </Link>
             {derniereMaj && (
               <span
-                title={dureeDepuis(derniereMaj) ? `Il y a ${dureeDepuis(derniereMaj)}` : undefined}
+                title={`Fraîcheur de ce que vous regardez — données affichées${dureeDepuis(derniereMaj) ? ` (il y a ${dureeDepuis(derniereMaj)})` : ""} · application mise à jour le ${formaterDateHeureFR(BUILD_DATE_ISO)}`}
                 className="rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-slate-200"
               >
                 Dernière mise à jour :{" "}
