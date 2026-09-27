@@ -505,6 +505,13 @@ export default function DashboardPage() {
             >
               🕘 Historique
             </Link>
+            <Link
+              href="/dashboard/memo"
+              title="Mémo : comprendre les indicateurs et les règles"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-xs font-medium text-white transition-colors hover:bg-white/20"
+            >
+              ⓘ Mémo
+            </Link>
             {derniereMaj && (
               <span
                 title={`Fraîcheur de ce que vous regardez — données affichées${dureeDepuis(derniereMaj) ? ` (il y a ${dureeDepuis(derniereMaj)})` : ""} · application mise à jour le ${formaterDateHeureFR(BUILD_DATE_ISO)}`}

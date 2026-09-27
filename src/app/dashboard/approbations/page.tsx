@@ -380,6 +380,13 @@ export default function ApprobationsPage() {
               🕘 Historique
             </Link>
             <Link
+              href="/dashboard/memo"
+              title="Mémo : comprendre les indicateurs et les règles"
+              className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-white/20"
+            >
+              ⓘ Mémo
+            </Link>
+            <Link
               href="/dashboard"
               className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
             >

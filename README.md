@@ -86,7 +86,8 @@ src/
       approbations/page.tsx     # file d'approbation BU (cloisonnée)
       rejets/page.tsx           # rejets à retraiter (centrale)
       alertes/[id]/page.tsx     # modification fiche (droits champ par champ + historique)
-      historique/page.tsx       # journal consultable (filtres + badges démo/SQL)
+      historique/page.tsx       # journal consultable (filtres + badges démo/réel)
+      memo/page.tsx               # mémo d'utilisation (guide structuré des indicateurs et règles)
   components/
     ContexteBU.tsx              # BU connectée (localStorage + event même-onglet) + sélecteur
     LogoAGL.tsx                 # logo officiel (next/image)
