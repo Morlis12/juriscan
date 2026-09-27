@@ -390,7 +390,7 @@ export default function ApprobationsPage() {
               href="/dashboard"
               className="rounded-full bg-white/10 px-4 py-1.5 text-sm font-medium text-white transition-colors hover:bg-brand-gold hover:text-brand-blue"
             >
-              ← Pilotage juridique
+              ← Pilotage de veille
             </Link>
           </div>
         </div>

@@ -152,7 +152,7 @@ export default function DashboardPage() {
   const [avertissement, setAvertissement] = useState<string | null>(null);
   // BU connectée (cloisonnement) : seule votre BU modifie ses assignations.
   const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
-  // Vue générale unique + filtres multicritères du pilotage juridique.
+  // Vue générale unique + filtres multicritères du pilotage de veille.
   const [filtreBU, setFiltreBU] = useState<FiltreBUCode>("ALL");
   const [filtreDate, setFiltreDate] = useState("");
   const [filtreType, setFiltreType] = useState("ALL");
@@ -468,9 +468,8 @@ export default function DashboardPage() {
           <div className="flex items-center gap-3">
             <LogoAGL />
             <div>
-              <p className="text-lg font-bold leading-tight">
-                AGL JuriCompliance · Pilotage Juridique
-              </p>
+              <p className="text-lg font-bold leading-tight">AGL JuriCompliance</p>
+              <p className="text-xs font-medium text-slate-300">Pilotage de veille</p>
               <p className="text-xs capitalize text-slate-300">{dateStr}</p>
             </div>
           </div>
@@ -526,11 +525,11 @@ export default function DashboardPage() {
       </header>
 
       <main className="mx-auto max-w-7xl space-y-6 px-4 py-6">
-        {/* FILTRES MULTICRITÈRES — pilotage juridique */}
+        {/* FILTRES MULTICRITÈRES — pilotage de veille */}
         <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <h2 className="text-sm font-bold uppercase tracking-wide text-brand-blue">
-              Filtres du pilotage juridique
+              Filtres du pilotage de veille
             </h2>
             {filtresActifs && (
               <button

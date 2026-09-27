@@ -262,7 +262,7 @@ export default function MemoPage() {
             href="/dashboard"
             className="rounded-full bg-brand-gold px-4 py-1.5 text-sm font-bold text-brand-blue transition-colors hover:brightness-95"
           >
-            ← Pilotage juridique
+              ← Pilotage de veille
           </Link>
         </div>
       </header>
