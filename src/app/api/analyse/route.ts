@@ -3,11 +3,14 @@ import { google } from '@ai-sdk/google';
 import { generateText } from 'ai';
 
 /**
- * JuriScan AI — OCR + recommandation BU (Gemini 3.6 Flash).
+ * JuriScan AI — OCR + recommandation BU (IA).
  *
  * Workflow à double validation JuriScan × JuriDesk :
  * - L'IA fait l'OCR, extrait les champs (21 colonnes) et propose la BU
  *   la plus probable (`propositionBU` parmi DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS).
+ * - Fidélité absolue exigée : références et articles copiés mot à mot (jamais
+ *   tronqués), `contenu` = transcription brute complète (jamais un résumé),
+ *   rien d'inventé (absent = chaîne vide). Voir PROMPT_PRECISION ci-dessous.
  * - La fiche est créée en `ATTENTE_VALIDATION_JURIDIQUE` : le juridique
  *   valide puis bascule vers `ATTENTE_APPROBATION_METIER` (voir /api/veille).
  */
@@ -65,16 +68,19 @@ export async function POST(req: Request) {
     }
 
     // APPEL OCR ET MULTIMODAL ULTRA-STABLE VIA LE SDK VERCEL AI
+    // (température basse + grand budget de sortie = transcription fidèle et complète)
     const response = await generateText({
       model: google('gemini-3.6-flash'),
-      system: "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). Analyse le document reçu (Journal Officiel, décret, arrêté, loi, circulaire) et extrais fidèlement ses informations réelles sans rien inventer. Tu dois systématiquement DÉDUIRE la nature juridique du texte d'après son intitulé et son contenu. Tu participes au workflow à double validation JuriScan × JuriDesk : après l'OCR, tu recommandes la Business Unit la plus probable pour traiter le texte.",
+      temperature: 0.1,
+      maxTokens: 16000,
+      system: "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). Analyse le document reçu (Journal Officiel, décret, arrêté, loi, circulaire) et extrais fidèlement ses informations réelles sans rien inventer. FIDÉLITÉ ABSOLUE : tu copies mot à mot les références officielles, les numéros d'articles et le contenu brut — tu ne tronques jamais, tu ne reformules jamais ces champs. Tu dois systématiquement DÉDUIRE la nature juridique du texte d'après son intitulé et son contenu. Tu participes au workflow à double validation JuriScan × JuriDesk : après l'OCR, tu recommandes la Business Unit la plus probable pour traiter le texte.",
       messages: [
         {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: "Analyse le document joint et extrais ses métadonnées sous ce format JSON brut strict (sans bloc markdown autour, sans écrire ```json) : { \"numeroOrdre\": \"AGL-2026-056\", \"qssfte\": \"\", \"natureTexte\": \"UNE SEULE valeur exacte parmi : Loi | Ordonnance | Décret | Arrêté | Circulaire | Décision | Autre — déduis-la ainsi : Loi si texte voté commençant par 'Loi n°' ; Ordonnance si 'Ordonnance n°' ; Décret si signé en Conseil des ministres commençant par 'Décret n°' ; Arrêté si ministériel ou interministériel commençant par 'Arrêté' ; Circulaire si note d'instruction ou d'information ; Décision si acte individuel ; Autre seulement si vraiment indéterminé (jamais 'Type de document')\", \"referenceTexte\": \"Référence officielle ou Titre principal\", \"article\": \"\", \"resumeTexte\": \"Résumé précis du contenu réel du fichier\", \"libelleApplicable\": \"Libellé complet de la version en vigueur\", \"moyenCommunication\": \"\", \"dateEntreeVigueur\": \"YYYY-MM-DD ou chaîne vide\", \"propositionBU\": \"DJ | DRH | DAF | DQHSE | PATR_IMMO | DILS — la BU la plus probable au vu du contenu (ex : droit du travail → DRH, fiscalité → DAF, environnement/sécurité → DQHSE, foncier/immobilier → PATR_IMMO, douane/logistique → DILS, contrats/contentieux/données → DJ)\", \"departement\": \"(miroir de propositionBU, même valeur)\", \"statutConformite\": \"NON_CONFORME_0\", \"actionsAmelioration\": \"Première action de mise en conformité suggérée ou chaîne vide\" }"
+              text: "Analyse le document joint et extrais ses métadonnées sous ce format JSON brut strict (sans bloc markdown autour, sans écrire ```json) : { \"numeroOrdre\": \"N° d'ordre unique au format AGL-2026-NNN — propose un numéro (ne recopie jamais un exemple, ne mets jamais deux fois le même)\", \"qssfte\": \"\", \"natureTexte\": \"UNE SEULE valeur exacte parmi : Loi | Ordonnance | Décret | Arrêté | Circulaire | Décision | Autre — déduis-la ainsi : Loi si texte voté commençant par 'Loi n°' ; Ordonnance si 'Ordonnance n°' ; Décret si signé en Conseil des ministres commençant par 'Décret n°' ; Arrêté si ministériel ou interministériel commençant par 'Arrêté' ; Circulaire si note d'instruction ou d'information ; Décision si acte individuel ; Autre seulement si vraiment indéterminé (jamais 'Type de document')\", \"referenceTexte\": \"Référence officielle COMPLÈTE ou titre principal COMPLET — copie exacte sans tronquer (numéro, date, autorité…)\", \"article\": \"Numéros des articles concernés copiés tels quels (ex : 'Article 2', 'Articles 3 à 5') — OBLIGATOIRE si le document contient des articles, chaîne vide seulement s'il n'y en a vraiment aucun\", \"resumeTexte\": \"Résumé précis et structuré du contenu réel : quels actes, quelles autorités, quelles dates, quels effets\", \"libelleApplicable\": \"Libellé complet de la version en vigueur\", \"contenu\": \"Transcription brute, fidèle et la plus complète possible du texte du document : COPIE EXACTE mot à mot (articles, visas, dispositif) — jamais un résumé, jamais une reformulation, jamais tronqué\", \"moyenCommunication\": \"\", \"dateEntreeVigueur\": \"Date exacte lue dans le document au format YYYY-MM-DD, ou chaîne vide\", \"propositionBU\": \"DJ | DRH | DAF | DQHSE | PATR_IMMO | DILS — la BU la plus probable au vu du contenu (ex : droit du travail → DRH, fiscalité → DAF, environnement/sécurité → DQHSE, foncier/immobilier → PATR_IMMO, douane/logistique → DILS, contrats/contentieux/données → DJ)\", \"departement\": \"(miroir de propositionBU, même valeur)\", \"statutConformite\": \"NON_CONFORME_0\", \"actionsAmelioration\": \"Première action de mise en conformité suggérée ou chaîne vide\" } Règle d'or : si une information est absente du document, chaîne vide — n'invente JAMAIS."
             },
             {
               type: 'image',

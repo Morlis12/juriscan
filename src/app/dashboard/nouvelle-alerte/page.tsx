@@ -24,12 +24,14 @@ interface ApiAnalyseData {
   article?: string;
   resumeTexte?: string;
   libelleApplicable?: string;
+  /** Transcription brute complète renvoyée par l'IA (copie exacte, jamais un résumé). */
+  contenu?: string;
   moyenCommunication?: string;
   dateEntreeVigueur?: string;
   statutConformite?: string;
   actionsAmelioration?: string;
   departement?: string;
-  /** Recommandation IA (Gemini 3.6 Flash) : BU la plus probable. */
+  /** Recommandation IA : BU la plus probable. */
   propositionBU?: string;
 }
 
@@ -109,6 +111,26 @@ export default function NouvelleAlertePage() {
     setSource(null);
   }
 
+  /** Charge un fichier d'exemple intégré au projet (JO n°53) pour tester l'analyse. */
+  async function chargerExemple(kind: "pdf" | "image") {
+    setErreur(null);
+    setSaved(false);
+    try {
+      const url = kind === "pdf" ? "/exemples/53.pdf" : "/exemples/53-image-test.png";
+      const nom = kind === "pdf" ? "53.pdf" : "53-image-test.png";
+      const reponse = await fetch(url);
+      if (!reponse.ok) throw new Error("Exemple introuvable.");
+      const blob = await reponse.blob();
+      prendreFichier(
+        new File([blob], nom, {
+          type: blob.type || (kind === "pdf" ? "application/pdf" : "image/png"),
+        }),
+      );
+    } catch (e) {
+      setErreur(e instanceof Error ? e.message : "Impossible de charger l'exemple.");
+    }
+  }
+
   async function lancerAnalyse() {
     if (!file) {
       setErreur("Déposez d'abord un PDF (ex. Journal Officiel CI du 9 juillet 2026) ou une image.");
@@ -167,6 +189,7 @@ export default function NouvelleAlertePage() {
         libelleApplicable: texteOu(data.libelleApplicable, socle.libelleApplicable),
         moyenCommunication: texteOu(data.moyenCommunication, socle.moyenCommunication),
         dateEntreeVigueur: texteOu(data.dateEntreeVigueur, socle.dateEntreeVigueur),
+        contenu: texteOu(data.contenu, socle.contenu),
         propositionBU,
         departementResponsable: departement,
         departementsResponsables: [departement],
@@ -180,9 +203,13 @@ export default function NouvelleAlertePage() {
           "",
           `Nature déduite : ${analyse.natureTexte || "—"}`,
           `Référence : ${analyse.referenceTexte}`,
+          `Article : ${analyse.article || "—"}`,
           `Résumé : ${analyse.resumeTexte}`,
           "",
           `Libellé applicable : ${analyse.libelleApplicable}`,
+          ...(analyse.contenu
+            ? [`Texte brut : ${analyse.contenu.length} caractères transcrits (voir champ 10)`]
+            : []),
           ...(analyse.propositionBU ? [`BU recommandée par l'IA : ${analyse.propositionBU}`] : []),
         ].join("\n"),
       );
@@ -417,6 +444,25 @@ export default function NouvelleAlertePage() {
             >
               {loading ? "Analyse IA en cours…" : "Lancer l'Analyse IA JuriScan"}
             </button>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => chargerExemple("pdf")}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-brand-blue transition-colors hover:border-brand-blue"
+              >
+                📄 Tester avec l&apos;exemple 53.pdf
+              </button>
+              <button
+                type="button"
+                onClick={() => chargerExemple("image")}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-brand-blue transition-colors hover:border-brand-blue"
+              >
+                🖼️ Tester avec l&apos;image d&apos;exemple
+              </button>
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              Fichiers de test intégrés au projet — JO n°53 du 2 juillet 2026.
+            </p>
             {loading && (
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
                 <div className="h-full w-1/2 animate-pulse rounded-full bg-brand-gold" />

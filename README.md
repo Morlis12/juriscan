@@ -16,8 +16,11 @@ voir `src/lib/dataverse/tables.ts`).
   chaque BU** dans le graphique « Niveau de conformité par texte » (détail
   déplié sous la moyenne pour les textes multi-BU).
 - **Analyse IA** (`/dashboard/nouvelle-alerte`) : dépôt PDF/image → extraction
-  (Gemini, repli simulation sans clé) ou saisie manuelle → **assignation
-  multi-BU** (un texte → une fiche par BU cochée).
+  (IA, repli simulation sans clé) ou saisie manuelle → **assignation
+  multi-BU** (un texte → une fiche par BU cochée). Fidélité exigée : articles
+  copiés mot à mot, transcription brute complète (`contenu`), références jamais
+  tronquées, rien d'inventé. Fichiers de test : `public/exemples/` (JO n°53,
+  chargeables depuis l'écran).
 - **Workflow à double validation** : `ATTENTE_VALIDATION_JURIDIQUE` →
   `ATTENTE_APPROBATION_METIER` → `APPROUVE_METIER` | `REJETE_METIER`
   (approbations BU, rejets à retraiter par la centrale).
@@ -111,6 +114,7 @@ prisma/schema.prisma            # 7 modèles : User, VeilleAlerte, VeilleFiche (
                                 # VeilleAction (+SCD2), VeilleFicheVersion,
                                 # VeilleActionVersion, VeilleJournal
 public/logo-agl.png             # logo officiel AGL (fond #1C3359)
+public/exemples/                # fichiers de test d'analyse (53.pdf + image, JO n°53)
 scripts/build-info.mjs          # horodate chaque build/dev → src/generated/build-info.ts
                                 # (date de l'application, ignoré par Git)
 ```
