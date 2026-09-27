@@ -3,11 +3,13 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/veille";
-import { CONFORMITE_STATUTS, DEPARTEMENT_CODES, NATURES_TEXTE, PERTINENCE_TRANSIT } from "@/domain/veille";
+import type { DepartementCode, NatureTexte } from "@/domain/veille";
+import { DEPARTEMENT_CODES, NATURES_TEXTE, PERTINENCE_TRANSIT } from "@/domain/veille";
 import {
   DEPARTEMENT_OPTIONS,
   creerAlerteVierge,
+  numeroterActes,
+  type ActeAnalyse,
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
 import { peutCreerAlerte } from "@/domain/acces";
@@ -16,7 +18,8 @@ import { LogoAGL } from "@/components/LogoAGL";
 
 type ModeSaisie = "auto" | "manuel";
 
-interface ApiAnalyseData {
+/** Un acte du tableau `{ actes }` renvoyé par POST /api/analyse (noms existants). */
+interface ApiAnalyseActe {
   numeroOrdre?: string;
   qssfte?: string;
   natureTexte?: string;
@@ -24,17 +27,25 @@ interface ApiAnalyseData {
   article?: string;
   resumeTexte?: string;
   libelleApplicable?: string;
-  /** Transcription brute complète renvoyée par l'IA (copie exacte, jamais un résumé). */
+  /** Transcription brute complète (copie exacte, jamais un résumé). */
   contenu?: string;
-  moyenCommunication?: string;
+  lienHypertexte?: string;
   dateEntreeVigueur?: string;
+  moyenCommunication?: string;
+  applicableAGLCI?: boolean;
+  departementResponsable?: string;
+  departementsResponsables?: string[];
   statutConformite?: string;
-  actionsAmelioration?: string;
-  departement?: string;
   /** Recommandation IA : BU la plus probable. */
   propositionBU?: string;
   /** Pertinence transit/logistique déduite par l'IA (vide = non renseignée). */
   pertinenceTransit?: string;
+}
+
+interface ApiAnalyseMeta {
+  tranches?: number;
+  actesBruts?: number;
+  actesRetenus?: number;
 }
 
 function texteOu(v: unknown, repli: string): string {
@@ -77,27 +88,64 @@ export default function NouvelleAlertePage() {
   const [dragOver, setDragOver] = useState(false);
   const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  const [texteExtrait, setTexteExtrait] = useState<string>("");
-  const [resultat, setResultat] = useState<AlerteAnalyse21 | null>(null);
+  // Lot multi-actes : « 1 document déposé » = « N textes extraits » (Acte X / N).
+  const [actes, setActes] = useState<ActeAnalyse[] | null>(null);
+  const [indexActe, setIndexActe] = useState(0);
   const [source, setSource] = useState<"gemini" | "simulation" | null>(null);
-  const [saved, setSaved] = useState(false);
+  const [meta, setMeta] = useState<ApiAnalyseMeta | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
   const [mode, setMode] = useState<ModeSaisie>("auto");
+
+  /** Acte affiché (« Acte X / N ») + compteurs du lot pour l'enregistrement. */
+  const acte =
+    actes && actes.length > 0 ? actes[Math.min(indexActe, actes.length - 1)] : null;
+  const nbAvecBU = actes
+    ? actes.filter((a) => a.departementsResponsables.length > 0).length
+    : 0;
+  const nbFiches = actes
+    ? actes.reduce((s, a) => s + a.departementsResponsables.length, 0)
+    : 0;
+
+  /** Aperçu du panneau « Texte extrait » pour l'acte affiché. */
+  function apercuActe(a: ActeAnalyse): string {
+    return [
+      `—— Analyse IA JuriScan : ${file?.name ?? "saisie manuelle"} ——`,
+      "",
+      `Acte ${a.idActe + 1}/${actes?.length ?? 1} · ${a.numeroOrdre || "N° à attribuer"}`,
+      `Nature déduite : ${a.natureTexte || "—"}`,
+      `Référence : ${a.referenceTexte}`,
+      `Article : ${a.article || "—"}`,
+      `Résumé : ${a.resumeTexte}`,
+      "",
+      `Libellé applicable : ${a.libelleApplicable}`,
+      ...(a.contenu
+        ? [`Texte brut : ${a.contenu.length} caractères transcrits (voir champ 10)`]
+        : []),
+      ...(a.propositionBU ? [`BU recommandée par l'IA : ${a.propositionBU}`] : []),
+    ].join("\n");
+  }
+
+  function resetActes() {
+    setActes(null);
+    setIndexActe(0);
+    setSource(null);
+    setMeta(null);
+    setMessage(null);
+  }
 
   function choisirMode(m: ModeSaisie) {
     setMode(m);
     setErreur(null);
-    setSaved(false);
-    // Saisie libre : texte + BU, prêt au clavier (la conformité est pilotée par les BU).
-    if (m === "manuel" && !resultat) {
-      setResultat(creerAlerteVierge());
-      setTexteExtrait("");
-      setSource(null);
+    resetActes();
+    // Saisie libre : un seul acte, texte + BU, prêt au clavier.
+    if (m === "manuel") {
+      setActes(numeroterActes([creerAlerteVierge()]));
     }
   }
 
   function prendreFichier(f: File | undefined) {
     setErreur(null);
-    setSaved(false);
+    resetActes();
     if (!f) return;
     const ok =
       f.type === "application/pdf" ||
@@ -108,15 +156,13 @@ export default function NouvelleAlertePage() {
       return;
     }
     setFile(f);
-    setResultat(null);
-    setTexteExtrait("");
-    setSource(null);
+    resetActes();
   }
 
   /** Charge un fichier d'exemple intégré au projet (JO n°53) pour tester l'analyse. */
   async function chargerExemple(kind: "pdf" | "image") {
     setErreur(null);
-    setSaved(false);
+    resetActes();
     try {
       const url = kind === "pdf" ? "/exemples/53.pdf" : "/exemples/53-image-test.png";
       const nom = kind === "pdf" ? "53.pdf" : "53-image-test.png";
@@ -140,10 +186,9 @@ export default function NouvelleAlertePage() {
     }
     setLoading(true);
     setErreur(null);
-    setSaved(false);
+    resetActes();
     try {
-      // Architecture REST : Base64 navigateur → POST JSON /api/analyse.
-      // Aucune Server Action : aucun objet binaire dans les Server Components.
+      // Base64 navigateur → POST JSON /api/analyse (aucun binaire côté serveur Next).
       const base64Data = await fichierVersBase64Pur(file);
       const mimeType = file.type || "application/pdf";
       const reponse = await fetch("/api/analyse", {
@@ -153,78 +198,67 @@ export default function NouvelleAlertePage() {
       });
       const payload = (await reponse.json()) as {
         success?: boolean;
-        data?: ApiAnalyseData;
+        data?: { actes?: ApiAnalyseActe[] };
         source?: "gemini" | "simulation";
+        meta?: ApiAnalyseMeta;
         error?: string;
       };
-      if (!reponse.ok || !payload.success || !payload.data) {
+      if (!reponse.ok || !payload.success || !payload.data || !Array.isArray(payload.data.actes)) {
         setErreur(payload.error || "Échec de l'analyse IA.");
         return;
       }
-      const data = payload.data;
-      // Zéro mock : texte IA réel + base vierge ; la conformité part à 0 % côté BU.
-      // La recommandation BU (`propositionBU`, miroir `departement`) pré-remplit
-      // le département responsable — le juridique reste décideur (workflow).
+      // Zéro mock : actes IA réels + base vierge ; la conformité part à 0 % côté BU.
+      // Chaque acte garde ses 12 champs + pertinence ; la recommandation BU
+      // pré-coche les BU — le juridique reste décideur (workflow).
       const socle = creerAlerteVierge();
-      const buRecommandee = [data.propositionBU, data.departement].find((v) =>
-        (DEPARTEMENT_CODES as string[]).includes(v ?? ""),
-      );
-      const departement = (
-        buRecommandee ?? socle.departementResponsable
-      ) as DepartementCode;
-      const propositionBU = (
-        (DEPARTEMENT_CODES as string[]).includes(data.propositionBU ?? "")
-          ? data.propositionBU
-          : ""
-      ) as AlerteAnalyse21["propositionBU"];
-      const statut = (CONFORMITE_STATUTS as string[]).includes(data.statutConformite ?? "")
-        ? (data.statutConformite as ConformiteStatut)
-        : socle.statutConformite;
-      // Pertinence transit (liste fermée) ; hors périmètre → applicable décoché
-      // par défaut (la centrale reste décideuse de l'assignation).
-      const pertinence = (
-        (PERTINENCE_TRANSIT as readonly string[]).includes(data.pertinenceTransit ?? "")
-          ? data.pertinenceTransit
-          : ""
-      ) as AlerteAnalyse21["pertinenceTransit"];
-      const horsPerimetre = pertinence === "Hors périmètre";
-      const analyse: AlerteAnalyse21 = {
-        ...socle,
-        applicableAGLCI: horsPerimetre ? false : socle.applicableAGLCI,
-        pertinenceTransit: pertinence,
-        numeroOrdre: texteOu(data.numeroOrdre, socle.numeroOrdre),
-        qssfte: texteOu(data.qssfte, socle.qssfte),
-        natureTexte: texteOu(data.natureTexte, socle.natureTexte),
-        referenceTexte: texteOu(data.referenceTexte, socle.referenceTexte),
-        article: texteOu(data.article, socle.article),
-        resumeTexte: texteOu(data.resumeTexte, socle.resumeTexte),
-        libelleApplicable: texteOu(data.libelleApplicable, socle.libelleApplicable),
-        moyenCommunication: texteOu(data.moyenCommunication, socle.moyenCommunication),
-        dateEntreeVigueur: texteOu(data.dateEntreeVigueur, socle.dateEntreeVigueur),
-        contenu: texteOu(data.contenu, socle.contenu),
-        propositionBU,
-        departementResponsable: departement,
-        departementsResponsables: [departement],
-        statutConformite: statut,
-        libelleAction: texteOu(data.actionsAmelioration, socle.libelleAction),
-      };
-      setResultat(analyse);
-      setTexteExtrait(
-        [
-          `—— Analyse IA JuriScan : ${file.name} ——`,
-          "",
-          `Nature déduite : ${analyse.natureTexte || "—"}`,
-          `Référence : ${analyse.referenceTexte}`,
-          `Article : ${analyse.article || "—"}`,
-          `Résumé : ${analyse.resumeTexte}`,
-          "",
-          `Libellé applicable : ${analyse.libelleApplicable}`,
-          ...(analyse.contenu
-            ? [`Texte brut : ${analyse.contenu.length} caractères transcrits (voir champ 10)`]
-            : []),
-          ...(analyse.propositionBU ? [`BU recommandée par l'IA : ${analyse.propositionBU}`] : []),
-        ].join("\n"),
-      );
+      const normalises: AlerteAnalyse21[] = payload.data.actes.map((d) => {
+        const buRecommandee = [d.propositionBU].find((v) =>
+          (DEPARTEMENT_CODES as string[]).includes(v ?? ""),
+        );
+        const bus = Array.isArray(d.departementsResponsables)
+          ? d.departementsResponsables.filter((v) =>
+              (DEPARTEMENT_CODES as string[]).includes(v ?? ""),
+            )
+          : [];
+        const coches = (buRecommandee ? [buRecommandee, ...bus] : bus).filter(
+          (v, i, arr) => arr.indexOf(v) === i,
+        ) as DepartementCode[];
+        const pertinence = (
+          (PERTINENCE_TRANSIT as readonly string[]).includes(d.pertinenceTransit ?? "")
+            ? d.pertinenceTransit
+            : ""
+        ) as AlerteAnalyse21["pertinenceTransit"];
+        return {
+          ...socle,
+          applicableAGLCI:
+            pertinence === "Hors périmètre" ? false : socle.applicableAGLCI,
+          pertinenceTransit: pertinence,
+          numeroOrdre: texteOu(d.numeroOrdre, ""),
+          qssfte: texteOu(d.qssfte, ""),
+          natureTexte: texteOu(d.natureTexte, ""),
+          referenceTexte: texteOu(d.referenceTexte, ""),
+          article: texteOu(d.article, ""),
+          resumeTexte: texteOu(d.resumeTexte, ""),
+          libelleApplicable: texteOu(d.libelleApplicable, ""),
+          lienHypertexte: "",
+          dateEntreeVigueur: texteOu(d.dateEntreeVigueur, ""),
+          contenu: texteOu(d.contenu, ""),
+          moyenCommunication: "",
+          propositionBU: (buRecommandee ?? "") as AlerteAnalyse21["propositionBU"],
+          departementResponsable: (buRecommandee ??
+            socle.departementResponsable) as DepartementCode,
+          departementsResponsables: coches,
+          statutConformite: socle.statutConformite,
+          libelleAction: "",
+        };
+      });
+      if (normalises.length === 0) {
+        setErreur("Aucun acte détecté dans ce document. Vérifiez le fichier ou saisissez manuellement.");
+        return;
+      }
+      setActes(numeroterActes(normalises));
+      setIndexActe(0);
+      setMeta(payload.meta ?? null);
       setSource(payload.source ?? "gemini");
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
@@ -234,30 +268,51 @@ export default function NouvelleAlertePage() {
   }
 
   async function enregistrerFiche() {
-    if (!resultat) return;
+    if (!actes) return;
     if (!peutCreerAlerte(buConnectee)) {
       setErreur(`Création / assignation : réservée à la centrale (vous êtes ${buConnectee}). Basculez la BU connectée en haut vers CENTRAL_VRG.`);
       return;
     }
-    if (resultat.departementsResponsables.length === 0) {
-      setErreur("Cochez au moins une BU responsable avant d'enregistrer.");
+    // Seuls les actes avec au moins une BU cochée partent (les autres —
+    // dont les « Hors périmètre » non assignés — sont ignorés avec message).
+    const aEnregistrer = actes.filter((a) => a.departementsResponsables.length > 0);
+    if (aEnregistrer.length === 0) {
+      setErreur("Cochez au moins une BU responsable sur au moins un acte avant d'enregistrer.");
       return;
     }
     setSaving(true);
     setErreur(null);
+    setMessage(null);
     try {
-      // Persistant : texte + BU cochées → Prisma (Alerte + une Fiche par BU).
+      // Persistant : N textes + BU cochées → N alertes (une fiche par BU).
       const reponse = await fetch("/api/sauvegarde", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
-        body: JSON.stringify({ ...resultat, buConnectee, emailConnecte }),
+        body: JSON.stringify({
+          // idActe/valide sont des champs d'écran, ignorés par le serveur.
+          actes: aEnregistrer,
+          buConnectee,
+          emailConnecte,
+        }),
       });
-      const payload = (await reponse.json().catch(() => null)) as { success?: boolean; error?: string } | null;
-      if (!reponse.ok || !payload?.success) {
+      const payload = (await reponse.json().catch(() => null)) as {
+        success?: boolean;
+        data?: { creees?: { numeroOrdre: string }[]; ignorees?: string[] };
+        error?: string;
+      } | null;
+      if (!reponse.ok || !payload?.success || !payload.data) {
         setErreur(payload?.error || "Échec de l'enregistrement en base.");
         return;
       }
-      // Redirection opérationnelle : la fiche rejoint l'onglet de sa direction.
+      const { creees = [], ignorees = [] } = payload.data;
+      if (ignorees.length > 0) {
+        // Reste sur l'écran pour corriger : liste les actes ignorés et pourquoi.
+        setMessage(
+          `✅ ${creees.length} texte(s) enregistré(s) (${creees.map((c) => c.numeroOrdre).join(", ")}). Ignorés : ${ignorees.join(" · ")}`,
+        );
+        return;
+      }
+      // Redirection opérationnelle : les fiches rejoignent leurs BU.
       router.push("/dashboard");
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Échec de l'enregistrement en base.");
@@ -266,26 +321,55 @@ export default function NouvelleAlertePage() {
     }
   }
 
+  /** Modifie un champ de l'acte affiché (« Acte X / N »). */
   function set<K extends keyof AlerteAnalyse21>(key: K, value: AlerteAnalyse21[K]) {
-    setResultat((prev) => (prev ? { ...prev, [key]: value } : prev));
-    setSaved(false);
+    if (!acte) return;
+    const id = acte.idActe;
+    setActes((prev) =>
+      prev ? prev.map((a) => (a.idActe === id ? { ...a, [key]: value } : a)) : prev,
+    );
   }
 
-  /** Coche / décoche une BU (un texte peut concerner plusieurs BU). */
+  /** Coche / décoche une BU pour l'acte affiché (un texte peut concerner plusieurs BU). */
   function basculerBU(code: DepartementCode) {
-    setResultat((prev) => {
+    if (!acte) return;
+    const id = acte.idActe;
+    setActes((prev) => {
       if (!prev) return prev;
-      const cochees = prev.departementsResponsables.includes(code)
-        ? prev.departementsResponsables.filter((c) => c !== code)
-        : [...prev.departementsResponsables, code];
-      return {
-        ...prev,
-        departementsResponsables: cochees,
-        // La première BU cochée reste l'assignation principale (compatibilité).
-        departementResponsable: cochees[0] ?? prev.departementResponsable,
-      };
+      return prev.map((a) => {
+        if (a.idActe !== id) return a;
+        const cochees = a.departementsResponsables.includes(code)
+          ? a.departementsResponsables.filter((c) => c !== code)
+          : [...a.departementsResponsables, code];
+        return {
+          ...a,
+          departementsResponsables: cochees,
+          // La première BU cochée reste l'assignation principale (compatibilité).
+          departementResponsable: cochees[0] ?? a.departementResponsable,
+        };
+      });
     });
-    setSaved(false);
+  }
+
+  /** Valide la ligne (BU cochées requises) et avance vers l'acte suivant du lot. */
+  function validerActe() {
+    if (!acte || !actes) return;
+    if (acte.departementsResponsables.length === 0) {
+      setErreur(
+        `Acte ${acte.idActe + 1}/${actes.length} : cochez au moins une BU pour valider la ligne (sinon laissez-le, il sera ignoré à l'enregistrement).`,
+      );
+      return;
+    }
+    setErreur(null);
+    const id = acte.idActe;
+    setActes((prev) =>
+      prev ? prev.map((a) => (a.idActe === id ? { ...a, valide: true } : a)) : prev,
+    );
+    if (id < actes.length - 1) {
+      setIndexActe(id + 1);
+    } else {
+      setMessage(`Dernier acte validé — vérifiez le lot puis « Enregistrer ».`);
+    }
   }
 
   return (
@@ -370,7 +454,7 @@ export default function NouvelleAlertePage() {
                   <span className="font-bold text-brand-blue">2.</span> Cochez les BU concernées (une fiche part chez chacune).
                 </li>
                 <li className="rounded-lg bg-slate-50 px-3 py-2">
-                  <span className="font-bold text-brand-blue">3.</span> Cliquez sur « 💾 Enregistrer la Fiche de Veille ».
+                  <span className="font-bold text-brand-blue">3.</span> Cliquez sur « 💾 Enregistrer » (un N° d&apos;ordre sera attribué).
                 </li>
               </ol>
             </div>
@@ -433,9 +517,7 @@ export default function NouvelleAlertePage() {
                   type="button"
                   onClick={() => {
                     setFile(null);
-                    setResultat(null);
-                    setTexteExtrait("");
-                    setSource(null);
+                    resetActes();
                   }}
                   className="shrink-0 rounded-full px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
                 >
@@ -505,8 +587,15 @@ export default function NouvelleAlertePage() {
               )}
             </div>
             <pre className="mt-3 max-h-72 overflow-auto whitespace-pre-wrap rounded-lg bg-slate-950 p-4 font-mono text-[11px] leading-relaxed text-slate-100">
-              {texteExtrait || "— Lancez l'analyse pour voir l'extraction du document ici. —"}
+              {acte ? apercuActe(acte) : "— Lancez l'analyse pour voir l'extraction du document ici. —"}
             </pre>
+            {actes && actes.length > 0 && (
+              <p className="mt-2 text-xs font-semibold text-brand-blue">
+                {actes.length} acte{actes.length > 1 ? "s" : ""} détecté{actes.length > 1 ? "s" : ""}
+                {meta?.tranches && meta.tranches > 1 ? ` (${meta.tranches} tranches analysées)` : ""}
+                {" — "}acte {Math.min(indexActe, actes.length - 1) + 1}/{actes.length} affiché.
+              </p>
+            )}
           </div>
           )}
         </section>
@@ -517,37 +606,90 @@ export default function NouvelleAlertePage() {
             <h2 className="text-base font-bold text-white">
               {mode === "manuel"
                 ? "2 · Saisie — texte et BU concernées"
-                : "2 · Résultats — texte extrait et assignation BU"}
+                : "2 · Résultats — textes extraits et assignation BU"}
             </h2>
-            {resultat && (
-              <span className="rounded-full bg-brand-gold px-3 py-1 font-mono text-xs font-bold text-brand-blue">
-                {resultat.numeroOrdre}
+            {acte && actes && (
+              <span className="flex flex-wrap items-center gap-1.5">
+                {actes.length > 1 && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIndexActe((i) => Math.max(0, i - 1));
+                        setMessage(null);
+                      }}
+                      disabled={indexActe === 0}
+                      aria-label="Acte précédent"
+                      className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-bold text-white transition-colors hover:bg-brand-gold hover:text-brand-blue disabled:opacity-40"
+                    >
+                      ←
+                    </button>
+                    <select
+                      value={Math.min(indexActe, actes.length - 1)}
+                      onChange={(e) => {
+                        setIndexActe(Number(e.target.value));
+                        setMessage(null);
+                      }}
+                      aria-label="Choisir l'acte"
+                      title="Choisir l'acte à relire et assigner"
+                      className="max-w-64 truncate rounded-full bg-white/10 px-2 py-1 font-mono text-xs font-bold text-white outline-none [&>option]:text-slate-900"
+                    >
+                      {actes.map((a) => (
+                        <option key={a.idActe} value={a.idActe}>
+                          Acte {a.idActe + 1}/{actes.length} · {a.natureTexte || "?"} ·{" "}
+                          {a.departementsResponsables.length > 0
+                            ? a.departementsResponsables.join("+")
+                            : "sans BU"}
+                          {a.valide ? " ✓" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIndexActe((i) => Math.min(actes.length - 1, i + 1));
+                        setMessage(null);
+                      }}
+                      disabled={indexActe >= actes.length - 1}
+                      aria-label="Acte suivant"
+                      className="rounded-full bg-white/10 px-2.5 py-1 text-xs font-bold text-white transition-colors hover:bg-brand-gold hover:text-brand-blue disabled:opacity-40"
+                    >
+                      →
+                    </button>
+                  </>
+                )}
+                <span
+                  className="rounded-full bg-brand-gold px-3 py-1 font-mono text-xs font-bold text-brand-blue"
+                  title="N° d'ordre attribué à l'enregistrement (modifiable champ 01)"
+                >
+                  {acte.numeroOrdre || "N° à attribuer"}
+                </span>
               </span>
             )}
           </div>
 
-          {!resultat ? (
+          {!acte ? (
             <div className="px-5 py-10 text-center text-sm text-slate-400">
               <p className="mx-auto max-w-sm">
                 Aucun résultat pour l&apos;instant. Chargez un PDF puis cliquez sur{" "}
                 <span className="font-semibold text-brand-blue">« Lancer l&apos;Analyse IA JuriScan »</span>, ou
-                basculez sur <span className="font-semibold text-brand-blue">« ✍️ Saisie Manuelle Libre »</span> : le
-                texte (N° d&apos;ordre, Nature, Référence, Résumé, Libellé applicable…) et les BU à cocher
-                apparaîtront ici. La conformité (preuves, actions, statut, responsable, délai, taux) sera
-                pilotée par chaque BU.
+                basculez sur <span className="font-semibold text-brand-blue">« ✍️ Saisie Manuelle Libre »</span> : chaque
+                acte détecté (N° d&apos;ordre, Nature, Référence, Résumé, Libellé applicable…) apparaîtra ici avec sa
+                navigation « Acte X / N » et ses BU à cocher. La conformité (preuves, actions, statut, responsable,
+                délai, taux) sera pilotée par chaque BU.
               </p>
             </div>
           ) : (
             <div className="space-y-6 px-5 py-5">
               <Bloc titre="Alerte — texte source (12 champs)">
-                <Champ label="01 · N° d'ordre" value={resultat.numeroOrdre} onChange={(v) => set("numeroOrdre", v)} mono />
-                <Champ label="02 · QSSTE" value={resultat.qssfte} onChange={(v) => set("qssfte", v)} mono />
+                <Champ label="01 · N° d'ordre" value={acte.numeroOrdre} onChange={(v) => set("numeroOrdre", v)} mono />
+                <Champ label="02 · QSSTE" value={acte.qssfte} onChange={(v) => set("qssfte", v)} mono />
                 <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                     03 · Nature du texte (déduite par l&apos;IA)
                   </span>
                   <select
-                    value={NATURES_TEXTE.includes(resultat.natureTexte as NatureTexte) ? resultat.natureTexte : ""}
+                    value={NATURES_TEXTE.includes(acte.natureTexte as NatureTexte) ? acte.natureTexte : ""}
                     onChange={(e) => set("natureTexte", e.target.value)}
                     className="w-full rounded-md border border-slate-200 bg-slate-50 px-2 py-1.5 text-slate-800 outline-none focus:border-brand-blue focus:bg-white"
                   >
@@ -559,26 +701,26 @@ export default function NouvelleAlertePage() {
                         {n}
                       </option>
                     ))}
-                    {resultat.natureTexte &&
-                      !NATURES_TEXTE.includes(resultat.natureTexte as NatureTexte) && (
-                        <option value={resultat.natureTexte}>
-                          {resultat.natureTexte}
+                    {acte.natureTexte &&
+                      !NATURES_TEXTE.includes(acte.natureTexte as NatureTexte) && (
+                        <option value={acte.natureTexte}>
+                          {acte.natureTexte}
                         </option>
                       )}
                   </select>
                 </label>
-                <Champ label="04 · Référence du texte" value={resultat.referenceTexte} onChange={(v) => set("referenceTexte", v)} />
-                <Champ label="05 · Article" value={resultat.article} onChange={(v) => set("article", v)} />
-                <Zone label="06 · Résumé du texte (IA)" value={resultat.resumeTexte} onChange={(v) => set("resumeTexte", v)} />
-                <Zone label="07 · Libellé / texte applicable en vigueur" value={resultat.libelleApplicable} onChange={(v) => set("libelleApplicable", v)} />
-                <Champ label="08 · Lien hypertexte" value={resultat.lienHypertexte} onChange={(v) => set("lienHypertexte", v)} mono />
-                <Champ label="09 · Date d'entrée en vigueur" type="date" value={resultat.dateEntreeVigueur} onChange={(v) => set("dateEntreeVigueur", v)} />
-                <Zone label="10 · Contenu brut extrait" value={resultat.contenu} onChange={(v) => set("contenu", v)} compact />
-                <Champ label="11 · Moyen de communication" value={resultat.moyenCommunication} onChange={(v) => set("moyenCommunication", v)} />
+                <Champ label="04 · Référence du texte" value={acte.referenceTexte} onChange={(v) => set("referenceTexte", v)} />
+                <Champ label="05 · Article" value={acte.article} onChange={(v) => set("article", v)} />
+                <Zone label="06 · Résumé du texte (IA)" value={acte.resumeTexte} onChange={(v) => set("resumeTexte", v)} />
+                <Zone label="07 · Libellé / texte applicable en vigueur" value={acte.libelleApplicable} onChange={(v) => set("libelleApplicable", v)} />
+                <Champ label="08 · Lien hypertexte" value={acte.lienHypertexte} onChange={(v) => set("lienHypertexte", v)} mono />
+                <Champ label="09 · Date d'entrée en vigueur" type="date" value={acte.dateEntreeVigueur} onChange={(v) => set("dateEntreeVigueur", v)} />
+                <Zone label="10 · Contenu brut extrait" value={acte.contenu} onChange={(v) => set("contenu", v)} compact />
+                <Champ label="11 · Moyen de communication" value={acte.moyenCommunication} onChange={(v) => set("moyenCommunication", v)} />
                 <label className="flex items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm">
                   <input
                     type="checkbox"
-                    checked={resultat.applicableAGLCI}
+                    checked={acte.applicableAGLCI}
                     onChange={(e) => set("applicableAGLCI", e.target.checked)}
                     className="h-4 w-4 accent-[#1C3359]"
                   />
@@ -586,31 +728,31 @@ export default function NouvelleAlertePage() {
                     <span className="mb-0.5 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
                       12 · Applicable à AGL CI
                     </span>
-                    <span className="font-medium text-slate-800">{resultat.applicableAGLCI ? "Oui" : "Non"}</span>
+                    <span className="font-medium text-slate-800">{acte.applicableAGLCI ? "Oui" : "Non"}</span>
                   </span>
                 </label>
               </Bloc>
 
               <Bloc titre="Assignation — BU responsables (une fiche par BU cochée)">
-                {resultat.pertinenceTransit && (
+                {acte.pertinenceTransit && (
                   <p
                     className={`rounded-lg px-3 py-2 text-xs font-medium sm:col-span-2 ${
-                      resultat.pertinenceTransit === "Directe"
+                      acte.pertinenceTransit === "Directe"
                         ? "bg-emerald-50 text-emerald-800"
-                        : resultat.pertinenceTransit === "Indirecte"
+                        : acte.pertinenceTransit === "Indirecte"
                           ? "bg-amber-50 text-amber-800"
                           : "bg-red-50 text-red-800"
                     }`}
                   >
-                    {resultat.pertinenceTransit === "Hors périmètre"
+                    {acte.pertinenceTransit === "Hors périmètre"
                       ? "⛔ Texte hors périmètre transit/logistique — aucune BU recommandée. La centrale reste seule décideuse de l'assignation."
-                      : `Pertinence transit : ${resultat.pertinenceTransit} — recommandation IA, la centrale tranche.`}
+                      : `Pertinence transit : ${acte.pertinenceTransit} — recommandation IA, la centrale tranche.`}
                   </p>
                 )}
-                {resultat.propositionBU && (
+                {acte.propositionBU && (
                   <p className="rounded-lg bg-brand-blue/5 px-3 py-2 text-xs font-medium text-brand-blue sm:col-span-2">
                     🤖 L&apos;IA recommande la BU :{" "}
-                    <span className="font-bold">{resultat.propositionBU}</span>
+                    <span className="font-bold">{acte.propositionBU}</span>
                     {" — "}un texte pouvant concerner plusieurs BU, cochez toutes
                     les BU concernées ci-dessous (une fiche part chez chacune).
                   </p>
@@ -622,8 +764,8 @@ export default function NouvelleAlertePage() {
                 </p>
                 <fieldset className="rounded-lg border-2 border-brand-gold/60 bg-brand-gold/10 px-3 py-2 text-sm sm:col-span-2">
                   <legend className="bg-white px-2 text-[11px] font-bold uppercase tracking-wide text-brand-blue">
-                    13 · BU responsables * ({resultat.departementsResponsables.length} cochée
-                    {resultat.departementsResponsables.length > 1 ? "s" : ""})
+                    13 · BU responsables * ({acte.departementsResponsables.length} cochée
+                    {acte.departementsResponsables.length > 1 ? "s" : ""})
                   </legend>
                   <div className="grid gap-2 sm:grid-cols-2">
                     {DEPARTEMENT_OPTIONS.map((d) => (
@@ -633,7 +775,7 @@ export default function NouvelleAlertePage() {
                       >
                         <input
                           type="checkbox"
-                          checked={resultat.departementsResponsables.includes(d.code)}
+                          checked={acte.departementsResponsables.includes(d.code)}
                           onChange={() => basculerBU(d.code)}
                           className="h-4 w-4 accent-[#1C3359]"
                         />
@@ -646,7 +788,7 @@ export default function NouvelleAlertePage() {
                       </label>
                     ))}
                   </div>
-                  {resultat.departementsResponsables.length === 0 && (
+                  {acte.departementsResponsables.length === 0 && (
                     <p className="mt-2 text-xs font-medium text-red-600">
                       Cochez au moins une BU pour enregistrer la fiche.
                     </p>
@@ -654,20 +796,27 @@ export default function NouvelleAlertePage() {
                 </fieldset>
               </Bloc>
 
-              {saved && (
+              {message && (
                 <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
-                  Ligne {resultat.numeroOrdre} assignée à{" "}
-                  {resultat.departementsResponsables.join(", ")} — prête pour Dataverse (simulation locale).
+                  {message}
+                </p>
+              )}
+              {acte.valide && (
+                <p className="rounded-lg bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700">
+                  ✓ Acte {acte.idActe + 1}/{actes?.length} validé — assigné à{" "}
+                  {acte.departementsResponsables.join(", ")}.
                 </p>
               )}
 
               <div className="flex flex-wrap gap-3">
                 <button
                   type="button"
-                  onClick={() => setSaved(true)}
+                  onClick={validerActe}
                   className="flex-1 rounded-xl bg-brand-gold px-5 py-2.5 text-sm font-bold text-brand-blue shadow transition-colors hover:brightness-95"
                 >
-                  Valider et assigner la ligne
+                  {actes && acte.idActe < actes.length - 1
+                    ? `Valider et passer à l'acte ${acte.idActe + 2}/${actes.length} →`
+                    : "✓ Valider la ligne"}
                 </button>
                 <button
                   type="button"
@@ -688,12 +837,21 @@ export default function NouvelleAlertePage() {
               <button
                 type="button"
                 onClick={enregistrerFiche}
-                disabled={saving}
-                title={peutCreerAlerte(buConnectee) ? "Assigner aux BU" : "Réservé à la centrale"}
+                disabled={saving || nbAvecBU === 0}
+                title={peutCreerAlerte(buConnectee) ? "Enregistrer les textes assignés (un N° d'ordre par acte)" : "Réservé à la centrale"}
                 className="w-full rounded-xl bg-emerald-600 px-5 py-3.5 text-base font-bold text-white shadow transition-colors hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
               >
-                {saving ? "Enregistrement en cours…" : "💾 Enregistrer la Fiche de Veille"}
+                {saving
+                  ? "Enregistrement en cours…"
+                  : `💾 Enregistrer ${nbAvecBU} texte${nbAvecBU > 1 ? "s" : ""} (${nbFiches} fiche${nbFiches > 1 ? "s" : ""} BU)`}
               </button>
+              {actes && actes.length - nbAvecBU > 0 && (
+                <p className="rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-500">
+                  {actes.length - nbAvecBU} acte{actes.length - nbAvecBU > 1 ? "s" : ""} sans BU —
+                  ignoré{actes.length - nbAvecBU > 1 ? "s" : ""} à l&apos;enregistrement
+                  (dont « Hors périmètre » non assignés). Cochez une BU pour les enregistrer.
+                </p>
+              )}
             </div>
           )}
         </section>

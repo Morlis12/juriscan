@@ -1,14 +1,17 @@
 import { NextResponse } from "next/server";
 
 /**
- * JuriScan AI — Sauvegarde finale de la fiche validée (bouton vert).
+ * JuriScan AI — Sauvegarde finale des fiches validées (bouton vert).
  *
- * POST /api/sauvegarde ← 21 colonnes du formulaire → Prisma
- * (`prisma.veilleAlerte.create` + fiche département). Le client redirige
- * ensuite vers `/dashboard` (onglet de la direction, graphiques à jour).
+ * POST /api/sauvegarde ← 21 colonnes du formulaire → Prisma :
+ * - `{ actes: [...] }` (multi-actes IA) → N `VeilleAlerte` (une par acte,
+ *   `<racine>-01`, `-02`, …) via `creerFichesVeilleMulti` (actes sans BU
+ *   ignorés avec leur motif, sans échec global).
+ * - objet unique (saisie manuelle) → `creerFicheVeille` (compatibilité).
+ * Le client redirige ensuite vers `/dashboard`.
  */
 
-import { creerFicheVeille } from "@/lib/veille-save";
+import { creerFicheVeille, creerFichesVeilleMulti } from "@/lib/veille-save";
 import { fusionnerAuteur, lireAuteur, lireAuteurDepuisCorps } from "@/lib/acces";
 import { estCentrale } from "@/domain/acces";
 
@@ -21,6 +24,10 @@ export async function POST(req: Request) {
         { error: "Création / assignation : réservée à la centrale (CENTRAL_VRG)." },
         { status: 403 },
       );
+    }
+    if (Array.isArray(corps.actes)) {
+      const resultat = await creerFichesVeilleMulti(corps.actes, auteur);
+      return NextResponse.json({ success: true, data: resultat }, { status: 201 });
     }
     const alerte = await creerFicheVeille(corps, auteur);
     return NextResponse.json({ success: true, data: alerte }, { status: 201 });

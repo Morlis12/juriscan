@@ -155,13 +155,19 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
     ),
   },
   {
-    titre: "Nouvelle alerte : les 3 étapes",
+    titre: "Nouvelle alerte : les actes un par un",
     contenu: (
       <ol className="list-decimal space-y-1 pl-5">
         <li>Analyse automatique (dépôt PDF/image) ou saisie manuelle libre.</li>
-        <li>Vérifiez le texte extrait, puis cochez les BU concernées.</li>
         <li>
-          Enregistrez : une fiche part chez chaque BU (réservé à la centrale).
+          Un document = N actes détectés : naviguez avec « Acte X / N »,
+          vérifiez chaque acte (nature, référence, articles, texte brut) puis
+          cochez les BU concernées.
+        </li>
+        <li>
+          « Valider » fait avancer vers l&apos;acte suivant ; « Enregistrer »
+          crée un N° d&apos;ordre par acte (-01, -02, …). Les actes sans BU
+          (dont « Hors périmètre ») sont ignorés.
         </li>
       </ol>
     ),

@@ -146,7 +146,32 @@ export function parseFicheRouteId(
   return { alerteId, ficheId };
 }
 
-export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeille = { bu: null, email: null }) {
+/** Champs validés d'une fiche (mono-acte ou un acte d'un lot multi-actes). */
+interface FicheNormalisee {
+  numeroOrdre: string;
+  natureTexte: string;
+  referenceTexte: string;
+  resumeTexte: string;
+  libelleApplicable: string;
+  statut: string;
+  propositionBU: DepartementCode | null;
+  pertinenceTransit: string | null;
+  fluxStatut: FluxStatut;
+  departements: string[];
+  taux: number;
+  libelleAction: string;
+  preuveFichier: PreuveFichierDonnees | null;
+  source: FicheVeillePayload;
+}
+
+function erreurValidation(message: string): Error {
+  const err = new Error(message);
+  (err as NodeJS.ErrnoException).code = "VALIDATION_400";
+  return err;
+}
+
+/** Valide un payload de fiche (lève VALIDATION_400 si incomplet/invalide). */
+function validerFiche(b: FicheVeillePayload): FicheNormalisee {
   const numeroOrdre = chaine(b.numeroOrdre).trim();
   const natureTexte = chaine(b.natureTexte).trim();
   const referenceTexte = chaine(b.referenceTexte).trim();
@@ -169,28 +194,20 @@ export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeil
   const departements = Array.from(new Set(listeBus)) as string[];
 
   if (!numeroOrdre || !natureTexte || !referenceTexte || !resumeTexte || !libelleApplicable) {
-    const err = new Error(
+    throw erreurValidation(
       "Champs requis manquants (N° ordre, nature, référence, résumé, libellé).",
     );
-    (err as NodeJS.ErrnoException).code = "VALIDATION_400";
-    throw err;
   }
   if (departements.length === 0) {
-    const err = new Error("Cochez au moins une BU responsable.");
-    (err as NodeJS.ErrnoException).code = "VALIDATION_400";
-    throw err;
+    throw erreurValidation("Cochez au moins une BU responsable.");
   }
   for (const code of departements) {
     if (!(DEPARTEMENT_CODES as string[]).includes(code)) {
-      const err = new Error(`Département responsable invalide : ${code}.`);
-      (err as NodeJS.ErrnoException).code = "VALIDATION_400";
-      throw err;
+      throw erreurValidation(`Département responsable invalide : ${code}.`);
     }
   }
   if (!(CONFORMITE_STATUTS as string[]).includes(statut)) {
-    const err = new Error("Statut de conformité invalide.");
-    (err as NodeJS.ErrnoException).code = "VALIDATION_400";
-    throw err;
+    throw erreurValidation("Statut de conformité invalide.");
   }
   // propositionBU optionnelle : si fournie, doit être une BU propositionnable.
   const propositionBU =
@@ -198,11 +215,9 @@ export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeil
       ? (propositionRaw as DepartementCode)
       : null;
   if (propositionRaw && !propositionBU) {
-    const err = new Error(
-      "propositionBU invalide (attendu : DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS).",
+    throw erreurValidation(
+      "propositionBU invalide (attendu : DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS, DIR_COMM_MARK).",
     );
-    (err as NodeJS.ErrnoException).code = "VALIDATION_400";
-    throw err;
   }
   // pertinenceTransit optionnelle : si fournie, valeur de la liste fermée.
   const pertinenceRaw = chaine(b.pertinenceTransit).trim();
@@ -221,84 +236,179 @@ export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeil
   const taux = Math.min(100, Math.max(0, Number(b.tauxAvancement) || 0));
   const libelleAction = chaine(b.libelleAction).trim();
 
-  const creer = async (ordre: string) =>
-    prisma.$transaction(async (tx) => {
-      const alerte = await tx.veilleAlerte.create({
-        data: {
-          numeroOrdre: ordre,
-          qssfte: chaine(b.qssfte).trim() || null,
-          natureTexte,
-          referenceTexte,
-          article: chaine(b.article).trim() || null,
-          resumeTexte,
-          libelleApplicable,
-          lienHypertexte: chaine(b.lienHypertexte).trim() || null,
-          dateEntreeVigueur: dateOuNull(b.dateEntreeVigueur),
-          contenu: chaine(b.contenu).trim() || resumeTexte,
-          moyenCommunication: chaine(b.moyenCommunication).trim() || null,
-        applicableA_AGL_CI: b.applicableAGLCI !== false,
-        propositionBU,
-        pertinenceTransit,
-          fichesDepartements: {
-            create: departements.map((code) => ({
-              departement: code as DepartementCode,
-              actionsExistantes: chaine(b.actionsExistantes).trim() || null,
-              preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
-              statutConformite: statut as ConformiteStatut,
-              preuveDifferee: chaine(b.preuveDifferee).trim() || null,
-              fluxStatut,
-              modifiedByBU: auteur.bu,
-              modifiedByEmail: auteur.email,
-              ...(preuveFichier
-                ? {
-                    preuveFichierNom: preuveFichier.nom,
-                    preuveFichierMime: preuveFichier.mime,
-                    preuveFichierDonnees: preuveFichier.donnees,
-                  }
-                : {}),
-              ...(libelleAction
-                ? {
-                    actionsAmelioration: {
-                      create: {
-                        libelleAction,
-                        delai: dateOuNull(b.delai),
-                        tauxAvancement: taux,
-                        modifiedByBU: auteur.bu,
-                        modifiedByEmail: auteur.email,
-                      },
-                    },
-                  }
-                : {}),
-            })),
-          },
-        },
-        include: { fichesDepartements: { include: { actionsAmelioration: true } } },
-      });
-      // SCD2 : journal de création (une entrée par fiche assignée, consultable).
-      for (const f of alerte.fichesDepartements) {
-        await tx.veilleJournal.create({
-          data: {
-            alerteId: alerte.id,
-            ficheId: f.id,
-            entite: "FICHE",
-            action: "CREATION",
-            buAuteur: auteur.bu,
-            emailAuteur: auteur.email,
-            details: `Assignée à ${f.departement} (texte ${ordre}).`,
-            champsModifies: JSON.stringify(["departement", "fluxStatut"]),
-          },
-        });
-      }
-      return alerte;
-    });
+  return {
+    numeroOrdre,
+    natureTexte,
+    referenceTexte,
+    resumeTexte,
+    libelleApplicable,
+    statut,
+    propositionBU,
+    pertinenceTransit,
+    fluxStatut,
+    departements,
+    taux,
+    libelleAction,
+    preuveFichier,
+    source: b,
+  };
+}
 
+/** Crée UNE alerte + ses fiches BU + journaux CREATION (transaction SCD2). */
+async function creerUneAlerte(
+  v: FicheNormalisee,
+  ordre: string,
+  auteur: AuteurVeille,
+) {
+  const b = v.source;
+  return prisma.$transaction(async (tx) => {
+    const alerte = await tx.veilleAlerte.create({
+      data: {
+        numeroOrdre: ordre,
+        qssfte: chaine(b.qssfte).trim() || null,
+        natureTexte: v.natureTexte,
+        referenceTexte: v.referenceTexte,
+        article: chaine(b.article).trim() || null,
+        resumeTexte: v.resumeTexte,
+        libelleApplicable: v.libelleApplicable,
+        lienHypertexte: chaine(b.lienHypertexte).trim() || null,
+        dateEntreeVigueur: dateOuNull(b.dateEntreeVigueur),
+        contenu: chaine(b.contenu).trim() || v.resumeTexte,
+        moyenCommunication: chaine(b.moyenCommunication).trim() || null,
+        applicableA_AGL_CI: b.applicableAGLCI !== false,
+        propositionBU: v.propositionBU,
+        pertinenceTransit: v.pertinenceTransit,
+        fichesDepartements: {
+          create: v.departements.map((code) => ({
+            departement: code as DepartementCode,
+            actionsExistantes: chaine(b.actionsExistantes).trim() || null,
+            preuvesExistantes: chaine(b.preuvesExistantes).trim() || null,
+            statutConformite: v.statut as ConformiteStatut,
+            preuveDifferee: chaine(b.preuveDifferee).trim() || null,
+            fluxStatut: v.fluxStatut,
+            modifiedByBU: auteur.bu,
+            modifiedByEmail: auteur.email,
+            ...(v.preuveFichier
+              ? {
+                  preuveFichierNom: v.preuveFichier.nom,
+                  preuveFichierMime: v.preuveFichier.mime,
+                  preuveFichierDonnees: v.preuveFichier.donnees,
+                }
+              : {}),
+            ...(v.libelleAction
+              ? {
+                  actionsAmelioration: {
+                    create: {
+                      libelleAction: v.libelleAction,
+                      delai: dateOuNull(b.delai),
+                      tauxAvancement: v.taux,
+                      modifiedByBU: auteur.bu,
+                      modifiedByEmail: auteur.email,
+                    },
+                  },
+                }
+              : {}),
+          })),
+        },
+      },
+      include: { fichesDepartements: { include: { actionsAmelioration: true } } },
+    });
+    // SCD2 : journal de création (une entrée par fiche assignée, consultable).
+    for (const f of alerte.fichesDepartements) {
+      await tx.veilleJournal.create({
+        data: {
+          alerteId: alerte.id,
+          ficheId: f.id,
+          entite: "FICHE",
+          action: "CREATION",
+          buAuteur: auteur.bu,
+          emailAuteur: auteur.email,
+          details: `Assignée à ${f.departement} (texte ${ordre}).`,
+          champsModifies: JSON.stringify(["departement", "fluxStatut"]),
+        },
+      });
+    }
+    return alerte;
+  });
+}
+
+export async function creerFicheVeille(b: FicheVeillePayload, auteur: AuteurVeille = { bu: null, email: null }) {
+  const v = validerFiche(b);
+  const creer = (ordre: string) => creerUneAlerte(v, ordre, auteur);
   try {
-    return await creer(numeroOrdre);
+    return await creer(v.numeroOrdre);
   } catch (e) {
     // N° d'ordre déjà pris (ex. re-clic) : repli avec suffixe unique, une fois.
     if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
-      return await creer(`${numeroOrdre}-${Date.now().toString(36).toUpperCase()}`);
+      return await creer(`${v.numeroOrdre}-${Date.now().toString(36).toUpperCase()}`);
     }
     throw e;
   }
+}
+
+export interface ResultatMultiActes {
+  creees: { numeroOrdre: string; natures: string; bus: string[] }[];
+  ignorees: string[];
+}
+
+/**
+ * Crée N alertes (une par acte extrait), chacune avec son propre `numeroOrdre`
+ * (`<racine>-01`, `-02`, …) et ses journaux CREATION. Les actes sans BU cochée
+ * (dont les « Hors périmètre » non assignés) sont ignorés avec leur motif —
+ * jamais d'échec global du lot pour un acte.
+ */
+export async function creerFichesVeilleMulti(
+  liste: unknown,
+  auteur: AuteurVeille = { bu: null, email: null },
+): Promise<ResultatMultiActes> {
+  if (!Array.isArray(liste) || liste.length === 0) {
+    throw erreurValidation("Aucun acte à enregistrer.");
+  }
+  const annee = new Date().getFullYear();
+  const racine = `AGL-${annee}-${Date.now().toString(36).toUpperCase()}`;
+  const vus = new Set<string>();
+  const creees: ResultatMultiActes["creees"] = [];
+  const ignorees: string[] = [];
+  let compteur = 0;
+
+  for (const brut of liste) {
+    const b = (brut ?? {}) as FicheVeillePayload;
+    const etiquette =
+      chaine(b.numeroOrdre).trim() ||
+      chaine(b.referenceTexte).trim().slice(0, 60) ||
+      "acte sans référence";
+    try {
+      compteur += 1;
+      const provisoire = `${racine}-${String(compteur).padStart(2, "0")}`;
+      const avecOrdre: FicheVeillePayload = {
+        ...b,
+        numeroOrdre: chaine(b.numeroOrdre).trim() || provisoire,
+      };
+      const v = validerFiche(avecOrdre);
+      let ordre = v.numeroOrdre;
+      if (vus.has(ordre)) ordre = provisoire;
+      if (vus.has(ordre)) ordre = `${provisoire}-${Date.now().toString(36).toUpperCase()}`;
+      vus.add(ordre);
+      let alerte;
+      try {
+        alerte = await creerUneAlerte(v, ordre, auteur);
+      } catch (e) {
+        // N° déjà pris en base : repli avec suffixe unique, une fois.
+        if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === "P2002") {
+          ordre = `${ordre}-${Date.now().toString(36).toUpperCase()}`;
+          alerte = await creerUneAlerte(v, ordre, auteur);
+        } else {
+          throw e;
+        }
+      }
+      creees.push({
+        numeroOrdre: alerte.numeroOrdre,
+        natures: v.natureTexte,
+        bus: v.departements,
+      });
+    } catch (e) {
+      ignorees.push(`${etiquette} : ${e instanceof Error ? e.message : "invalide"}`);
+    }
+  }
+  return { creees, ignorees };
 }

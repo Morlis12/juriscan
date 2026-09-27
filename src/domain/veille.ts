@@ -45,10 +45,13 @@ export const DEPARTEMENTS: Record<DepartementCode, string> = {
 export const DEPARTEMENT_CODES = Object.keys(DEPARTEMENTS) as DepartementCode[];
 
 /**
- * Natures de texte déduites par Gemini 3.6 Flash dès l'OCR (liste fermée).
+ * Natures de texte déduites par l'IA dès l'OCR (liste fermée, étendue aux
+ * actes de Journal Officiel : un JO contient des dizaines d'actes distincts —
+ * enquêtes publiques, certificats fonciers, récépissés d'association, RCCM…).
  * Règles : Loi (votée, « Loi n°… »), Ordonnance, Décret (« Décret n°… »,
  * Conseil des ministres), Arrêté (ministériel, « Arrêté n°… »), Circulaire
- * (instruction), Décision, Autre (si indéterminé — le juridique corrige).
+ * (instruction), Décision, actes JO listés ci-dessous, Autre (si indéterminé
+ * — le juridique corrige).
  */
 export const NATURES_TEXTE = [
   "Loi",
@@ -57,6 +60,12 @@ export const NATURES_TEXTE = [
   "Arrêté",
   "Circulaire",
   "Décision",
+  "Avis d'enquête publique / commodo et incommodo",
+  "Certificat foncier individuel",
+  "Certificat foncier collectif",
+  "Certificat de mutation de propriété foncière",
+  "Récépissé de déclaration d'association",
+  "Formulaire de modification RCCM",
   "Autre",
 ] as const;
 
@@ -113,7 +122,9 @@ export const FLUX_STATUT_LABELS: Record<FluxStatut, string> = {
 
 /**
  * BU éligibles à la recommandation IA (`propositionBU`) et à l'approbation métier.
- * CENTRAL_VRG et DIR_COMM_MARK exclus du routage IA (périmètres transverse / non ciblés).
+ * CENTRAL_VRG exclu du routage IA (périmètre transverse = la centrale pilote).
+ * DIR_COMM_MARK incluse : l'IA peut suggérer la direction commerciale quand le
+ * texte la concerne (ex : concurrence, étiquetage, prix).
  */
 export const BU_PROPOSITIONNABLES = [
   "DJ",
@@ -122,6 +133,7 @@ export const BU_PROPOSITIONNABLES = [
   "DQHSE",
   "PATR_IMMO",
   "DILS",
+  "DIR_COMM_MARK",
 ] as const satisfies readonly DepartementCode[];
 
 export type PropositionBU = (typeof BU_PROPOSITIONNABLES)[number];

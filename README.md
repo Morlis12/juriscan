@@ -15,15 +15,19 @@ voir `src/lib/dataverse/tables.ts`).
   recherche, KPI, texte groupés par `numeroOrdre`, taux moyen et **pourcentage de
   chaque BU** dans le graphique « Niveau de conformité par texte » (détail
   déplié sous la moyenne pour les textes multi-BU).
-- **Analyse IA** (`/dashboard/nouvelle-alerte`) : dépôt PDF/image → extraction
-  (IA, repli simulation sans clé) ou saisie manuelle → **assignation
-  multi-BU** (un texte → une fiche par BU cochée). Fidélité exigée : articles
-  copiés mot à mot, transcription brute complète (`contenu`), références jamais
-  tronquées, rien d'inventé. Contexte métier AGL CI (transit/logistique) en tête
-  du prompt : pertinence `Directe` / `Indirecte` / `Hors périmètre` (jamais de BU
-  suggérée hors périmètre ; `applicableAGLCI` décoché par défaut dans ce cas,
-  la centrale tranche). Fichiers de test : `public/exemples/` (JO n°53,
-  chargeables depuis l'écran).
+- **Analyse IA multi-actes** (`/dashboard/nouvelle-alerte`) : dépôt PDF/image →
+  extraction (IA, clé requise — pas de mode démo) ou saisie manuelle. « 1 document »
+  = « N textes » (un JO = des dizaines d'actes, jamais fusionnés) : navigation
+  « Acte X / N », assignation multi-BU **par acte**, enregistrement en N alertes
+  (`<racine>-01`, `-02`, … ; actes sans BU ignorés avec motif). PDF longs découpés
+  en tranches de 5 pages (+1 de chevauchement, fusion/dédoublonnage), sortie JSON
+  structurée (schéma zod). Fidélité exigée : articles copiés mot à mot,
+  transcription brute complète (`contenu`), références jamais tronquées, rien
+  d'inventé. Contexte métier AGL CI (transit/logistique) en tête du prompt :
+  pertinence `Directe` / `Indirecte` / `Hors périmètre` (jamais de BU suggérée
+  hors périmètre ; `applicableAGLCI` décoché par défaut dans ce cas, la centrale
+  tranche). Fichiers de test : `public/exemples/` (JO n°53, chargeables depuis
+  l'écran). Réponse brute loggée (`GEMINI_RAW_*`, voir logs Vercel).
 - **Workflow à double validation** : `ATTENTE_VALIDATION_JURIDIQUE` →
   `ATTENTE_APPROBATION_METIER` → `APPROUVE_METIER` | `REJETE_METIER`
   (approbations BU, rejets à retraiter par la centrale).
@@ -51,7 +55,9 @@ Next.js 16 (App Router) · React 19 · Tailwind v4 · Prisma 6 + PostgreSQL ·
 
 ```bash
 npm install
-cp .env.example .env   # renseigner DATABASE_URL (+ GOOGLE_GENERATIVE_AI_API_KEY pour l'OCR réel)
+cp .env.example .env   # OBLIGATOIRE : renseigner DATABASE_URL et
+                       # GOOGLE_GENERATIVE_AI_API_KEY (sans clé, POST /api/analyse
+                       # répond 500 « Clé API manquante » — aucun mode démo)
 npm run db:push        # crée le schéma (7 tables) — ou : npm run db:migrate
 npm run dev            # http://localhost:3000 → redirige vers /dashboard
 ```
@@ -102,7 +108,7 @@ src/
     veille-mock.ts              # 30 fiches + 5 textes multi-BU (AGL-2026-031 à 035)
     historique-demo.ts          # journal simulé ancré à aujourd'hui + jalonsDemoPourFiche
   domain/                       # pur, sans Next.js/Prisma — référence portable Dataverse
-    veille.ts                   # types, statuts, workflow, BU
+    veille.ts                   # types, statuts (natures étendues actes JO), workflow, BU
     acces.ts                    # MATRICE D'ACCÈS (centrale vs BU — DJ cloisonnée)
     historique.ts               # entités/actions tracées SCD2, type JournalEntree
     jalons.ts                   # JALONS DE DATES (formatage, ancienneté, début d'attente)

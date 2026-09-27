@@ -1,29 +1,67 @@
-import { NextResponse } from 'next/server';
-import { google } from '@ai-sdk/google';
-import { generateText } from 'ai';
+import { NextResponse } from "next/server";
+import { google } from "@ai-sdk/google";
+import { generateObject } from "ai";
+import { z } from "zod";
+import { PDFDocument } from "pdf-lib";
 
 /**
- * JuriScan AI — OCR + recommandation BU (IA).
+ * JuriScan AI — OCR multi-actes + recommandation BU (IA).
  *
- * Workflow à double validation JuriScan × JuriDesk :
- * - L'IA fait l'OCR, extrait les champs (21 colonnes) et propose la BU
- *   la plus probable (`propositionBU` parmi DJ, DRH, DAF, DQHSE, PATR_IMMO, DILS).
- * - Fidélité absolue exigée : références et articles copiés mot à mot (jamais
- *   tronqués), `contenu` = transcription brute complète (jamais un résumé),
- *   rien d'inventé (absent = chaîne vide). Voir PROMPT_PRECISION ci-dessous.
- * - La fiche est créée en `ATTENTE_VALIDATION_JURIDIQUE` : le juridique
- *   valide puis bascule vers `ATTENTE_APPROBATION_METIER` (voir /api/veille).
+ * Modèle : « 1 document déposé » = « N textes extraits » (un Journal Officiel
+ * contient des dizaines d'actes juridiquement distincts — jamais fusionnés).
+ * - PDF > ~10 pages : découpé en tranches de 5 pages avec chevauchement d'1
+ *   page (anti-troncature), une extraction par tranche, puis fusion +
+ *   dédoublonnage (clé nature|référence|article).
+ * - Sortie JSON structurée (`generateObject`, schéma zod en tableau) : l'IA
+ *   ne peut pas renvoyer un résumé global à la place des actes.
+ * - Mapping schéma IA → colonnes existantes (jamais renommées) :
+ *   libelleVersion → libelleApplicable, contenuBrut → contenu,
+ *   buSuggeree → propositionBU (+ miroir departement),
+ *   dateEntreeVigueur JJ/MM/AAAA → YYYY-MM-DD, article "N/A" → "".
+ * - `numeroOrdre` attribué par le serveur (`<racine>-01`, `-02`, …), jamais
+ *   inventé par l'IA. `pertinenceTransit` Hors périmètre → BU forcées à vide.
+ * - Diagnostic : réponse BRUTE loggée par tranche (GEMINI_RAW_*) avant tout
+ *   traitement — voir les logs Vercel pour vérifier le nombre d'actes.
+ *
+ * Répond `{ actes: AlerteAnalyse21[], source, meta }` (pas d'objet plat).
  */
 
 import {
   BU_PROPOSITIONNABLES,
   PERTINENCE_TRANSIT,
+  type DepartementCode,
 } from "@/domain/veille";
+
+/** Schéma IA (noms du prompt) — un objet par acte détecté, jamais fusionnés. */
+const ActeBrutSchema = z.object({
+  natureTexte: z.string().describe("Nature de CET acte uniquement"),
+  referenceTexte: z.string().describe("Référence officielle complète de CET acte"),
+  article: z.string().describe("Articles concernés de CET acte, ou N/A"),
+  resumeTexte: z.string().describe("2-3 phrases sur CET acte uniquement"),
+  libelleVersion: z.string().describe("Libellé complet de la version en vigueur"),
+  lienHypertexte: z.string().describe("Lien hypertexte ou chaîne vide"),
+  dateEntreeVigueur: z.string().describe("Date au format JJ/MM/AAAA ou chaîne vide"),
+  contenuBrut: z.string().describe("Transcription brute complète de CET acte, jamais tronquée"),
+  pertinenceTransit: z.string().describe("Directe | Indirecte | Hors périmètre"),
+  buSuggeree: z.string().describe("BU suggérée ou vide si Hors périmètre"),
+});
+
+type ActeBrut = z.infer<typeof ActeBrutSchema>;
 
 function normaliserBU(v: unknown): string | null {
   if (typeof v !== "string") return null;
-  const code = v.trim().toUpperCase();
-  return (BU_PROPOSITIONNABLES as readonly string[]).includes(code) ? code : null;
+  const brut = v.trim();
+  if (!brut || /^(n\/a|na|vide|-+|aucune?)$/i.test(brut)) return null;
+  const code = brut.toUpperCase().replace(/[\s-]+/g, "_");
+  const alias: Record<string, string> = {
+    PATRIMO: "PATR_IMMO",
+    PATRIMMO: "PATR_IMMO",
+    DIRCOMMMARK: "DIR_COMM_MARK",
+    DIRCOMM: "DIR_COMM_MARK",
+    COMMERCIAL: "DIR_COMM_MARK",
+  };
+  const canon = alias[code] ?? code;
+  return (BU_PROPOSITIONNABLES as readonly string[]).includes(canon) ? canon : null;
 }
 
 function normaliserPertinence(v: unknown): string | null {
@@ -33,9 +71,9 @@ function normaliserPertinence(v: unknown): string | null {
 }
 
 /**
- * Ramène la nature déduite par l'IA vers la liste fermée (insensible aux
- * accents/casse). Le libellé brut est conservé si vraiment inconnu — le
- * juridique tranche via la liste déroulante (jamais de « Type de document »).
+ * Ramène la nature déduite vers la liste fermée (accents/casse insensibles,
+ * actes JO en premier — un décret d'application peut citer « la loi »).
+ * Le libellé brut est conservé si vraiment inconnu (le juridique tranche).
  */
 function normaliserNature(v: unknown): string {
   if (typeof v !== "string") return "";
@@ -45,20 +83,80 @@ function normaliserNature(v: unknown): string {
     .toLowerCase()
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "");
-  // Le plus spécifique d'abord : un décret d'application peut citer « la loi ».
-  const table: [string, string][] = [
-    ["Décret", "decret"],
-    ["Arrêté", "arrete"],
-    ["Ordonnance", "ordonnance"],
-    ["Circulaire", "circulaire"],
-    ["Décision", "decision"],
-    ["Loi", "loi"],
-    ["Autre", "autre"],
+  const table: [string, string[]][] = [
+    ["Avis d'enquête publique / commodo et incommodo", ["enquete publique", "commodo"]],
+    ["Certificat foncier individuel", ["certificat foncier individuel"]],
+    ["Certificat foncier collectif", ["certificat foncier collectif"]],
+    ["Certificat de mutation de propriété foncière", ["mutation de propriete", "mutation fonciere"]],
+    ["Récépissé de déclaration d'association", ["recepisse", "declaration d'association"]],
+    ["Formulaire de modification RCCM", ["rccm"]],
+    ["Décret", ["decret"]],
+    ["Arrêté", ["arrete"]],
+    ["Ordonnance", ["ordonnance"]],
+    ["Circulaire", ["circulaire"]],
+    ["Décision", ["decision"]],
+    ["Loi", ["loi"]],
+    ["Autre", ["autre"]],
   ];
-  for (const [canon, mot] of table) {
-    if (cle.includes(mot)) return canon;
+  for (const [canon, mots] of table) {
+    if (mots.some((mot) => cle.includes(mot))) return canon;
   }
   return brut;
+}
+
+/** JJ/MM/AAAA → YYYY-MM-DD (passe-plat si déjà ISO, vide sinon). */
+function normaliserDate(v: unknown): string {
+  if (typeof v !== "string") return "";
+  const t = v.trim();
+  let m = t.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (m) return `${m[3]}-${m[2]}-${m[1]}`;
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  return "";
+}
+
+/** "N/A" (et variantes) → chaîne vide ; le reste est conservé tel quel. */
+function normaliserArticle(v: unknown): string {
+  if (typeof v !== "string") return "";
+  const t = v.trim();
+  if (!t || /^(n\/a|na|-+|non applicable|sans objet)$/i.test(t)) return "";
+  return t;
+}
+
+const SYSTEME = "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). CONTEXTE MÉTIER : AGL CI est une entreprise de TRANSIT ET LOGISTIQUE (manutention portuaire, transport de marchandises, douane, entreposage, gestion de son patrimoine immobilier et de ses infrastructures). Sa veille juridique ne porte que sur les textes qui affectent DIRECTEMENT ou INDIRECTEMENT son activité : réglementation du transport, du transit, de la douane, du commerce extérieur ; droit portuaire, maritime, ferroviaire, routier ; foncier et urbanisme UNIQUEMENT s'il concerne un terrain, un lotissement ou une zone où AGL CI ou une société liée est partie prenante (jamais les certificats fonciers de particuliers sans lien identifiable avec l'entreprise) ; droit du travail, fiscalité, environnement (HSE) applicables aux entreprises du secteur ; droit des sociétés/RCCM si l'entité concernée est AGL CI ou une filiale/partenaire connu. Un acte du Journal Officiel qui ne touche à AUCUN de ces domaines (ex : promotion d'un enseignant-chercheur, certificat foncier d'un particulier sans rapport avec l'entreprise, nomination d'un administrateur civil sans lien avec le secteur) N'EST PAS DE LA VEILLE JURIDIQUE PERTINENTE pour AGL CI, même s'il est bien présent dans le JO. RÈGLE FONCIER/CMPF : ne classer 'Directe' ou 'Indirecte' QUE si le nom d'AGL CI, d'une de ses filiales connues, ou d'un lotissement/zone logistique/portuaire apparaît dans l'acte ; par défaut, un certificat foncier concernant un particulier ou une société sans rapport apparent est 'Hors périmètre' — ne jamais assigner Patr Immo par réflexe sur tout ce qui touche au foncier. FIDÉLITÉ ABSOLUE : tu copies mot à mot les références officielles, les numéros d'articles et le contenu brut — tu ne tronques jamais, tu ne reformules jamais ces champs. MULTI-ACTES : le document peut contenir PLUSIEURS actes juridiquement distincts (un Journal Officiel = des dizaines d'actes) : tu dois systématiquement DÉDUIRE la nature de CHAQUE acte et recommander une BU par acte — sauf texte 'Hors périmètre', pour lequel tu ne suggères AUCUNE BU.";
+
+const TACHE = "TÂCHE : Analyse le document joint et extrais TOUS ses actes sous forme de TABLEAU JSON (un objet par acte détecté — schéma ci-dessous). CONSIGNE : ne fusionne JAMAIS deux actes distincts (deux arrêtés consécutifs, deux certificats fonciers consécutifs = deux objets séparés). Si le document contient 49 actes, le tableau doit contenir 49 objets. Schéma d'un acte : { \"natureTexte\": \"Décret | Arrêté | Avis d'enquête publique / commodo et incommodo | Certificat foncier individuel | Certificat foncier collectif | Certificat de mutation de propriété foncière | Récépissé de déclaration d'association | Formulaire de modification RCCM | Autre — nature de CET acte uniquement\", \"referenceTexte\": \"Référence officielle COMPLÈTE de CET acte — copie exacte sans tronquer\", \"article\": \"Articles concernés de CET acte copiés tels quels, ou N/A\", \"resumeTexte\": \"2-3 phrases sur CET acte uniquement\", \"libelleVersion\": \"Libellé complet de la version en vigueur\", \"lienHypertexte\": \"\", \"dateEntreeVigueur\": \"JJ/MM/AAAA ou chaîne vide\", \"contenuBrut\": \"Transcription brute complète de CET acte : COPIE EXACTE mot à mot — jamais tronquée, jamais inventée\", \"pertinenceTransit\": \"Directe | Indirecte | Hors périmètre\", \"buSuggeree\": \"DJ | DAF | DRH | Patr Immo | DQHSE | DIR_COMM_MARK | DILS — vide si Hors périmètre\" } Règle d'or : information absente = chaîne vide — n'invente JAMAIS.";
+
+interface Tranche {
+  donnees: string;
+  etiquette: string;
+}
+
+/** Découpe un PDF en tranches de 5 pages avec chevauchement d'1 page (> 10 pages). */
+async function decouperPdf(base64Data: string): Promise<Tranche[]> {
+  const pdf = await PDFDocument.load(Buffer.from(base64Data, "base64"), {
+    ignoreEncryption: true,
+  });
+  const n = pdf.getPageCount();
+  if (n <= 10) return [{ donnees: base64Data, etiquette: "intégral" }];
+  const tranches: Tranche[] = [];
+  const TAILLE = 5;
+  const PAS = TAILLE - 1;
+  for (let debut = 0; debut < n; debut += PAS) {
+    const fin = Math.min(debut + TAILLE, n);
+    const morceau = await PDFDocument.create();
+    const indices: number[] = [];
+    for (let p = debut; p < fin; p += 1) indices.push(p);
+    const pages = await morceau.copyPages(pdf, indices);
+    pages.forEach((page) => morceau.addPage(page));
+    const octets = await morceau.save();
+    tranches.push({
+      donnees: Buffer.from(octets).toString("base64"),
+      etiquette: `pages ${debut + 1}-${fin}/${n}`,
+    });
+    if (fin >= n) break;
+  }
+  return tranches;
 }
 
 export async function POST(req: Request) {
@@ -76,62 +174,109 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Configuration : Clé API manquante sur le serveur." }, { status: 500 });
     }
 
-    // APPEL OCR ET MULTIMODAL ULTRA-STABLE VIA LE SDK VERCEL AI
-    // (température basse + grand budget de sortie = transcription fidèle et complète)
-    // Contexte métier AGL CI en tête, puis TÂCHE : noms de clés = colonnes
-    // existantes de l'interface (jamais renommées), pertinence en plus.
-    const response = await generateText({
-      model: google('gemini-3.6-flash'),
-      temperature: 0.1,
-      maxTokens: 16000,
-      system: "Tu es l'expert en OCR et en droit ivoirien d'Africa Global Logistics (AGL CI). CONTEXTE MÉTIER : AGL CI est une entreprise de TRANSIT ET LOGISTIQUE (manutention portuaire, transport de marchandises, douane, entreposage, gestion de son patrimoine immobilier et de ses infrastructures). Sa veille juridique ne porte que sur les textes qui affectent DIRECTEMENT ou INDIRECTEMENT son activité : réglementation du transport, du transit, de la douane, du commerce extérieur ; droit portuaire, maritime, ferroviaire, routier ; foncier et urbanisme UNIQUEMENT s'il concerne un terrain, un lotissement ou une zone où AGL CI ou une société liée est partie prenante (jamais les certificats fonciers de particuliers sans lien identifiable avec l'entreprise) ; droit du travail, fiscalité, environnement (HSE) applicables aux entreprises du secteur ; droit des sociétés/RCCM si l'entité concernée est AGL CI ou une filiale/partenaire connu. Un acte du Journal Officiel qui ne touche à AUCUN de ces domaines (ex : promotion d'un enseignant-chercheur, certificat foncier d'un particulier sans rapport avec l'entreprise, nomination d'un administrateur civil sans lien avec le secteur) N'EST PAS DE LA VEILLE JURIDIQUE PERTINENTE pour AGL CI, même s'il est bien présent dans le JO. RÈGLE FONCIER/CMPF : ne classer 'Directe' ou 'Indirecte' QUE si le nom d'AGL CI, d'une de ses filiales connues, ou d'un lotissement/zone logistique/portuaire apparaît dans l'acte ; par défaut, un certificat foncier concernant un particulier ou une société sans rapport apparent est 'Hors périmètre' — ne jamais assigner Patr Immo par réflexe sur tout ce qui touche au foncier. FIDÉLITÉ ABSOLUE : tu copies mot à mot les références officielles, les numéros d'articles et le contenu brut — tu ne tronques jamais, tu ne reformules jamais ces champs. Tu dois systématiquement DÉDUIRE la nature juridique du texte d'après son intitulé et son contenu. Tu participes au workflow à double validation JuriScan × JuriDesk : après l'OCR, tu recommandes la Business Unit la plus probable pour traiter le texte — sauf texte 'Hors périmètre', pour lequel tu ne suggères AUCUNE BU.",
-      messages: [
-        {
-          role: 'user',
-          content: [
-            {
-              type: 'text',
-              text: "TÂCHE : Analyse le document joint et extrais ses métadonnées sous ce format JSON brut strict (sans bloc markdown autour, sans écrire ```json) — les clés sont les colonnes existantes de l'interface, à conserver telles quelles : { \"numeroOrdre\": \"N° d'ordre unique au format AGL-2026-NNN — propose un numéro (ne recopie jamais un exemple, ne mets jamais deux fois le même)\", \"qssfte\": \"\", \"natureTexte\": \"UNE SEULE valeur exacte parmi : Loi | Ordonnance | Décret | Arrêté | Circulaire | Décision | Autre — déduis-la ainsi : Loi si texte voté commençant par 'Loi n°' ; Ordonnance si 'Ordonnance n°' ; Décret si signé en Conseil des ministres commençant par 'Décret n°' ; Arrêté si ministériel ou interministériel commençant par 'Arrêté' ; Circulaire si note d'instruction ou d'information ; Décision si acte individuel ; Autre seulement si vraiment indéterminé (jamais 'Type de document')\", \"referenceTexte\": \"Référence officielle COMPLÈTE ou titre principal COMPLET — copie exacte sans tronquer (numéro, date, autorité…)\", \"article\": \"Numéros des articles concernés copiés tels quels (ex : 'Article 2', 'Articles 3 à 5') — OBLIGATOIRE si le document contient des articles, chaîne vide seulement s'il n'y en a vraiment aucun\", \"resumeTexte\": \"Résumé précis et structuré du contenu réel : quels actes, quelles autorités, quelles dates, quels effets\", \"libelleApplicable\": \"Libellé complet de la version en vigueur\", \"contenu\": \"Transcription brute, fidèle et la plus complète possible du texte du document : COPIE EXACTE mot à mot (articles, visas, dispositif) — jamais un résumé, jamais une reformulation, jamais tronqué\", \"moyenCommunication\": \"\", \"dateEntreeVigueur\": \"Date exacte lue dans le document au format YYYY-MM-DD, ou chaîne vide\", \"pertinenceTransit\": \"Directe si le texte régit une activité qu'AGL CI exerce (transport, transit, douane, port, foncier d'exploitation identifié) | Indirecte s'il peut affecter AGL CI sans la viser (ex : réglementation minière générant du fret, urbanisme d'une zone avec installations AGL CI) | Hors périmètre si aucun lien avec le transit/logistique ni l'entreprise\", \"propositionBU\": \"DJ | DRH | DAF | DQHSE | PATR_IMMO | DILS — la BU la plus probable au vu du contenu (droit du travail → DRH, fiscalité → DAF, environnement/sécurité → DQHSE, foncier d'exploitation → PATR_IMMO, douane/logistique → DILS, contrats/contentieux/données → DJ) — VIDE si pertinenceTransit = 'Hors périmètre'\", \"departement\": \"(miroir de propositionBU, même valeur — VIDE si 'Hors périmètre')\", \"statutConformite\": \"NON_CONFORME_0\", \"actionsAmelioration\": \"Première action de mise en conformité suggérée ou chaîne vide\" } Règles d'or : si pertinenceTransit = 'Hors périmètre', propositionBU et departement restent VIDES (jamais de BU sur un texte hors périmètre, même si un mot-clé matche) ; si une information est absente du document, chaîne vide — n'invente JAMAIS."
-            },
-            {
-              type: 'image',
-              image: base64Data,
-              mimeType: mimeType
-            }
-          ]
-        }
-      ]
-    });
+    // Découpage anti-troncature (PDF longs : JO) — images : appel unique.
+    const tranches: Tranche[] =
+      mimeType === "application/pdf"
+        ? await decouperPdf(base64Data)
+        : [{ donnees: base64Data, etiquette: "intégral" }];
 
-    // Nettoyage de la chaîne de caractères si l'IA a malgré tout ajouté des balises markdown
-    let cleanedText = response.text.trim();
-    if (cleanedText.startsWith('```')) {
-      cleanedText = cleanedText.replace(/```json|```/g, "").trim();
+    // Extraction structurée par tranche (un appel IA par tranche).
+    const bruts: ActeBrut[] = [];
+    for (const tranche of tranches) {
+      const { object } = await generateObject({
+        model: google("gemini-3.6-flash"),
+        output: "array",
+        schema: ActeBrutSchema,
+        temperature: 0.1,
+        maxTokens: 16000,
+        system: SYSTEME,
+        messages: [
+          {
+            role: "user",
+            content: [
+              {
+                type: "text",
+                text:
+                  tranches.length > 1
+                    ? `${TACHE} CONTEXTE DE TRANCHE : ceci est la tranche « ${tranche.etiquette} » d'un document plus long — extrais UNIQUEMENT les actes visibles dans CETTE tranche, sans deviner la suite ni répéter les autres tranches.`
+                    : TACHE,
+              },
+              { type: "image", image: tranche.donnees, mimeType: "application/pdf" },
+            ],
+          },
+        ],
+      });
+      // DIAGNOSTIC : réponse BRUTE avant tout traitement (voir logs Vercel).
+      const brutTranche = JSON.stringify(object);
+      console.log(
+        `GEMINI_RAW tranche=${tranche.etiquette} actes=${object.length} caracteres=${brutTranche.length}`,
+      );
+      console.log(`GEMINI_RAW_START ${tranche.etiquette}\n${brutTranche}\nGEMINI_RAW_END`);
+      bruts.push(...object);
     }
 
-    const brut = JSON.parse(cleanedText) as Record<string, unknown>;
-    // Pertinence transit (liste fermée) ; hors périmètre → aucune BU suggérée.
-    const pertinenceTransit = normaliserPertinence(brut.pertinenceTransit);
-    const horsPerimetre = pertinenceTransit === "Hors périmètre";
-    // Normalise la recommandation BU : valeur stricte ou null (le juridique tranche).
-    // Garde serveur : jamais de BU sur un texte hors périmètre.
-    const propositionBU = horsPerimetre
-      ? null
-      : (normaliserBU(brut.propositionBU) ?? normaliserBU(brut.departement));
-    const donnees = {
-      ...brut,
-      pertinenceTransit,
-      // Nature déduite par l'IA, ramenée à la liste fermée (Loi, Décret…).
-      natureTexte: normaliserNature(brut.natureTexte),
-      propositionBU,
-      // Compatibilité avec l'écran nouvelle-alerte (lit `departement`) : miroir validé.
-      departement: horsPerimetre
-        ? ""
-        : (propositionBU ?? (typeof brut.departement === "string" ? brut.departement : "")),
-    };
+    // Fusion + dédoublonnage (chevauchement d'1 page) sur nature|référence|article.
+    const vus = new Set<string>();
+    const retenus: ActeBrut[] = [];
+    for (const a of bruts) {
+      const cle = [a.natureTexte, a.referenceTexte, a.article, a.resumeTexte]
+        .map((v) => (typeof v === "string" ? v : "").toLowerCase().replace(/\s+/g, " ").trim())
+        .join("|");
+      if (cle.replace(/\|/g, "") === "") continue;
+      if (vus.has(cle)) continue;
+      vus.add(cle);
+      retenus.push(a);
+    }
 
-    return NextResponse.json({ success: true, data: donnees, source: "gemini" });
+    // Normalisation vers les colonnes existantes + N° d'ordre serveur (-01, -02…).
+    const annee = new Date().getFullYear();
+    const racine = `AGL-${annee}-${Date.now().toString(36).toUpperCase()}`;
+    const actes = retenus.map((a, i) => {
+      const pertinence = normaliserPertinence(a.pertinenceTransit);
+      const horsPerimetre = pertinence === "Hors périmètre";
+      const propositionBU = horsPerimetre ? null : normaliserBU(a.buSuggeree);
+      const bu = propositionBU as DepartementCode | null;
+      return {
+        numeroOrdre: `${racine}-${String(i + 1).padStart(2, "0")}`,
+        qssfte: "",
+        natureTexte: normaliserNature(a.natureTexte),
+        referenceTexte: typeof a.referenceTexte === "string" ? a.referenceTexte.trim() : "",
+        article: normaliserArticle(a.article),
+        resumeTexte: typeof a.resumeTexte === "string" ? a.resumeTexte.trim() : "",
+        libelleApplicable: typeof a.libelleVersion === "string" ? a.libelleVersion.trim() : "",
+        lienHypertexte: "",
+        dateEntreeVigueur: normaliserDate(a.dateEntreeVigueur),
+        contenu: typeof a.contenuBrut === "string" ? a.contenuBrut.trim() : "",
+        moyenCommunication: "",
+        applicableAGLCI: !horsPerimetre,
+        propositionBU: bu,
+        pertinenceTransit: pertinence,
+        departementResponsable: bu ?? "DJ",
+        departementsResponsables: bu ? [bu] : [],
+        actionsExistantes: "",
+        preuvesExistantes: "",
+        statutConformite: "NON_CONFORME_0",
+        preuveDifferee: "",
+        libelleAction: "",
+        responsable: "",
+        delai: "",
+        tauxAvancement: 0,
+      };
+    });
 
+    console.log(
+      `GEMINI_RESULT tranches=${tranches.length} bruts=${bruts.length} retenus=${actes.length}`,
+    );
+    return NextResponse.json({
+      success: true,
+      data: { actes },
+      source: "gemini",
+      meta: {
+        tranches: tranches.length,
+        actesBruts: bruts.length,
+        actesRetenus: actes.length,
+      },
+    });
   } catch (error: unknown) {
     console.error("Erreur critique OCR Vercel AI SDK :", error);
     const message = error instanceof Error ? error.message : "Erreur interne de traitement";

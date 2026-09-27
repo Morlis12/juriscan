@@ -13,7 +13,7 @@ import { NextResponse } from "next/server";
  */
 
 import { prisma } from "@/lib/prisma";
-import { creerFicheVeille } from "@/lib/veille-save";
+import { creerFicheVeille, creerFichesVeilleMulti } from "@/lib/veille-save";
 import { fusionnerAuteur, lireAuteur, lireAuteurDepuisCorps } from "@/lib/acces";
 import { estCentrale } from "@/domain/acces";
 
@@ -26,6 +26,10 @@ export async function POST(req: Request) {
         { error: "Création / assignation : réservée à la centrale (CENTRAL_VRG)." },
         { status: 403 },
       );
+    }
+    if (Array.isArray(corps.actes)) {
+      const resultat = await creerFichesVeilleMulti(corps.actes, auteur);
+      return NextResponse.json({ success: true, data: resultat }, { status: 201 });
     }
     const alerte = await creerFicheVeille(corps, auteur);
     return NextResponse.json({ success: true, data: alerte }, { status: 201 });

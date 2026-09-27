@@ -1,9 +1,16 @@
 /**
  * JuriScan AI — Domaine « Nouvelle alerte » (pur, découplé de Next.js).
  *
- * Rôle : définir les colonnes métier de la ligne d'alerte analysée.
+ * Rôle : définir les colonnes métier des lignes d'alerte analysées.
  * Zéro donnée fictive : l'extraction vient exclusivement de POST /api/analyse
- * (Gemini réel) ou de la frappe clavier (saisie manuelle libre).
+ * (IA réelle) ou de la frappe clavier (saisie manuelle libre).
+ *
+ * Modèle multi-actes : « 1 document déposé » = « N textes extraits » (un
+ * Journal Officiel contient des dizaines d'actes juridiquement distincts).
+ * POST /api/analyse répond `{ actes: AlerteAnalyse21[] }` (un objet par acte,
+ * jamais fusionnés) ; l'écran fait défiler « Acte X / N », chacun avec sa
+ * propre assignation multi-BU ; la sauvegarde crée N `VeilleAlerte`
+ * (`AGL-…-01`, `-02`, …). La saisie manuelle = 1 acte.
  *
  * Répartition des rôles :
  * - Le juridique renseigne le texte + coche les BU (nouvelle-alerte).
@@ -80,6 +87,25 @@ export const DEPARTEMENT_OPTIONS: { code: DepartementCode; label: string }[] = (
 )
   .filter((code) => code !== "CENTRAL_VRG")
   .map((code) => ({ code, label: DEPARTEMENTS[code] }));
+
+/**
+ * Un acte extrait côté écran : les 21 colonnes + identifiant local (`idActe`,
+ * index dans le lot) + état de validation. « Valider et assigner la ligne »
+ * marque l'acte `valide` et avance vers le suivant ; l'enregistrement final
+ * sauvegarde les actes ayant au moins une BU cochée (les autres — dont les
+ * « Hors périmètre » sans BU — sont ignorés avec un message).
+ */
+export interface ActeAnalyse extends AlerteAnalyse21 {
+  /** Index local dans le lot déposé (navigation « Acte X / N »). */
+  idActe: number;
+  /** Ligne relue et validée par la centrale (prête à enregistrer). */
+  valide: boolean;
+}
+
+/** Enveloppe un lot d'actes (auto : N actes IA ; manuel : 1 acte). */
+export function numeroterActes(actes: AlerteAnalyse21[]): ActeAnalyse[] {
+  return actes.map((a, i) => ({ ...a, idActe: i, valide: false }));
+}
 
 /**
  * Formulaire vierge pour la saisie manuelle libre (sans document) :
