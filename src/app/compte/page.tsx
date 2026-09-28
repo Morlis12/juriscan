@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
 import { PastilleSession, useBuConnectee } from "@/components/SessionBU";
+import { ChampMotDePasse } from "@/components/ChampMotDePasse";
 import { DEPARTEMENTS } from "@/domain/veille";
 
 /**
@@ -30,7 +31,6 @@ export default function ComptePage() {
   const [erreur, setErreur] = useState<string | null>(null);
   const [succes, setSucces] = useState<string | null>(null);
   const [enCours, setEnCours] = useState(false);
-  const [afficher, setAfficher] = useState(false);
 
   async function changerMotDePasse(e: React.FormEvent) {
     e.preventDefault();
@@ -137,59 +137,32 @@ export default function ComptePage() {
             </p>
           </div>
 
-          <label className="block text-sm">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Mot de passe actuel
-            </span>
-            <input
-              type={afficher ? "text" : "password"}
-              required
-              autoComplete="current-password"
-              value={ancien}
-              onChange={(e) => setAncien(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-brand-blue"
-            />
-          </label>
+          <ChampMotDePasse
+            id="mdp-actuel"
+            label="Mot de passe actuel"
+            value={ancien}
+            onChange={setAncien}
+            autoComplete="current-password"
+          />
 
-          <label className="block text-sm">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Nouveau mot de passe
-            </span>
-            <input
-              type={afficher ? "text" : "password"}
-              required
-              autoComplete="new-password"
-              value={nouveau}
-              onChange={(e) => setNouveau(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-brand-blue"
-            />
-          </label>
+          <ChampMotDePasse
+            id="mdp-nouveau"
+            label="Nouveau mot de passe"
+            value={nouveau}
+            onChange={setNouveau}
+            autoComplete="new-password"
+          />
 
-          <label className="block text-sm">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Confirmer le nouveau mot de passe
-            </span>
-            <input
-              type={afficher ? "text" : "password"}
-              required
-              autoComplete="new-password"
-              value={confirmation}
-              onChange={(e) => setConfirmation(e.target.value)}
-              className="w-full rounded-md border border-slate-300 px-3 py-2 outline-none focus:border-brand-blue"
-            />
-          </label>
-
-          <label className="flex items-center gap-2 text-xs text-slate-600">
-            <input
-              type="checkbox"
-              checked={afficher}
-              onChange={(e) => setAfficher(e.target.checked)}
-            />
-            Afficher les mots de passe
-          </label>
+          <ChampMotDePasse
+            id="mdp-confirmation"
+            label="Confirmer le nouveau mot de passe"
+            value={confirmation}
+            onChange={setConfirmation}
+            autoComplete="new-password"
+          />
 
           {erreur && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
+            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700" role="alert">
               {erreur}
             </p>
           )}

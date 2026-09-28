@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { LogoAGL } from "@/components/LogoAGL";
+import { ChampMotDePasse } from "@/components/ChampMotDePasse";
 
 /**
  * AGL JuriCompliance — Écran de connexion.
@@ -75,9 +76,13 @@ export default function ConnexionPage() {
             </span>
             <input
               type="text"
+              id="identifiant"
+              name="identifiant"
               required
               autoComplete="username"
               autoFocus
+              autoCapitalize="none"
+              spellCheck={false}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="veille@agl.ci ou direction-dj@agl.ci"
@@ -85,25 +90,14 @@ export default function ConnexionPage() {
             />
           </label>
 
-          <label className="block text-sm">
-            <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-slate-500">
-              Mot de passe
-            </span>
-            <input
-              type="password"
-              required
-              autoComplete="current-password"
-              value={motDePasse}
-              onChange={(e) => setMotDePasse(e.target.value)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-slate-800 outline-none focus:border-brand-blue focus:ring-2 focus:ring-brand-blue/20"
-            />
-          </label>
-
-          {erreur && (
-            <p className="rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">
-              {erreur}
-            </p>
-          )}
+          <ChampMotDePasse
+            id="mot-de-passe"
+            label="Mot de passe"
+            value={motDePasse}
+            onChange={setMotDePasse}
+            autoComplete="current-password"
+            error={erreur}
+          />
 
           <button
             type="submit"

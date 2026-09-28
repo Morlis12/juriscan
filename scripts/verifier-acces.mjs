@@ -9,6 +9,9 @@
  */
 
 import { existsSync, readFileSync } from "node:fs";
+import { chargerEnvLocal } from "./lib/env-local.mjs";
+
+chargerEnvLocal();
 import { join } from "node:path";
 
 const RACINE = process.cwd();

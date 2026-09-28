@@ -17,6 +17,9 @@
  */
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { chargerEnvLocal } from "./lib/env-local.mjs";
+
+chargerEnvLocal();
 import { join } from "node:path";
 import { hacherMotDePasse, motDePasseProvisoire } from "../src/lib/mots-de-passe.ts";
 
@@ -173,9 +176,17 @@ function exporter() {
   );
   process.stdout.write(
     `── SECRET DE SESSION ──\n` +
-      `Générez-en un : node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"\n` +
-      `Puis SESSION_SECRET dans les mêmes variables d'environnement.\n` +
-      `Celui du fichier local (reproduit ici pour information) :\n  ${donnees.secretSession}\n\n`,
+      (process.env.SESSION_SECRET
+        ? `Secret effectif (variable SESSION_SECRET de cet environnement) :\n  ${process.env.SESSION_SECRET}\n` +
+          `C'est celui à coller dans Vercel.\n` +
+          `Le fichier ${FICHIER} en contient un autre, utilisé seulement si SESSION_SECRET est absent :\n  ${donnees.secretSession}\n`
+        : `Secret du fichier ${FICHIER} (aucune variable SESSION_SECRET définie) :\n  ${donnees.secretSession}\n` +
+          `Générez-en un neuf avec : node -e "console.log(require('node:crypto').randomBytes(32).toString('base64url'))"\n`),
+  );
+  process.stdout.write(
+    `\nDans Vercel : Project Settings → Environment Variables → une variable par ligne,\n` +
+      `puis collez le JSON ci-dessus tel quel (une seule ligne, sans guillemets autour).\n` +
+      `Redéployez ensuite (Settings → Redeploy) pour que les variables soient prises en compte.\n\n`,
   );
   return 0;
 }
