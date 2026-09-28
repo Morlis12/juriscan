@@ -81,6 +81,28 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
     ),
   },
   {
+    titre: "Lire un texte en entier (vue immersive)",
+    contenu: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          Dans le graphique <strong>« Niveau de conformité par texte »</strong>,
+          cliquez une barre : le texte juridique s&apos;ouvre en pleine page —
+          article, libellé applicable, transcription brute et métadonnées.
+        </li>
+        <li>
+          <strong>Taille S / M / L</strong> pour lire confortablement, bouton{" "}
+          <strong>Copier</strong> pour la transcription brute, et{" "}
+          <strong>🔗 Consulter le texte officiel</strong> si le lien est connu.
+        </li>
+        <li>
+          <strong>←</strong> et <strong>→</strong> passent au texte précédent /
+          suivant, <strong>Échap</strong> referme. Rien n&apos;est enregistré par cette
+          lecture : c&apos;est une consultation.
+        </li>
+      </ul>
+    ),
+  },
+  {
     titre: "Les 3 indicateurs du pilotage",
     contenu: (
       <ul className="list-disc space-y-1 pl-5">

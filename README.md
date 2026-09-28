@@ -14,7 +14,12 @@ voir `src/lib/dataverse/tables.ts`).
 - **Pilotage juridique** (`/dashboard`) : filtres BU / date / type / workflow +
   recherche, KPI, texte groupés par `numeroOrdre`, taux moyen et **pourcentage de
   chaque BU** dans le graphique « Niveau de conformité par texte » (détail
-  déplié sous la moyenne pour les textes multi-BU).
+  déplié sous la moyenne pour les textes multi-BU). **Clic sur une barre → vue
+  immersive du texte juridique** (`src/components/VueTexteImmersive.tsx`) : article,
+  libellé applicable, transcription brute (taille réglable, copie), lien officiel,
+  résumé IA, métadonnées et conformité par direction. Le texte complet est chargé
+  en tâche de fond via `GET /api/veille/[id]` ; navigation ← / → entre les textes,
+  Échap referme, focus restitué à la barre d'origine, défilement de page verrouillé.
 - **Analyse IA multi-actes** (`/dashboard/nouvelle-alerte`) : dépôt PDF/image →
   extraction (IA, clé requise — pas de mode démo) ou saisie manuelle. « 1 document »
   = « N textes » (un JO = des dizaines d'actes, jamais fusionnés) : navigation
@@ -117,6 +122,10 @@ src/
   components/
     ContexteBU.tsx              # BU connectée (localStorage + event même-onglet) + sélecteur
     LogoAGL.tsx                 # logo officiel (next/image)
+    NavOnglets.tsx              # barre de boutons partagée (Tableau de bord · Assignation ·
+                                # Approbation · Rejet · Historique · Mémo ; Assignation = CTA or)
+    VueTexteImmersive.tsx       # VUE IMMERSIVE DU TEXTE JURIDIQUE (clic sur une barre du
+                                # graphique « Niveau de conformité par texte »)
     PreuveFichierInput.tsx      # pièce jointe preuve (PDF/image ≤ 8 Mo, base64)
   data/
     veille-mock.ts              # 30 fiches + 5 textes multi-BU (AGL-2026-031 à 035)

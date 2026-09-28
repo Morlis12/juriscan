@@ -15,6 +15,7 @@ import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
+import { VueTexteImmersive } from "@/components/VueTexteImmersive";
 import {
   MOCK_ACTIONS,
   MOCK_ALERTES,
@@ -164,6 +165,8 @@ export default function DashboardPage() {
   const [tauxCorriges, setTauxCorriges] = useState<Record<string, number>>({});
   // Texte déplié : affiche le niveau de conformité de chaque BU pour ce texte.
   const [texteOuvert, setTexteOuvert] = useState<string | null>(null);
+  /** Texte ouvert en vue immersive (clic sur une barre du graphique). */
+  const [texteImmersif, setTexteImmersif] = useState<string | null>(null);
 
   // Message de succès après enregistrement / modification d'une fiche.
   useEffect(() => {
@@ -701,8 +704,11 @@ export default function DashboardPage() {
           <p className="mt-1 text-xs text-slate-500">
             Taux moyen des BU assignées à chaque texte — pour les textes
             multi-BU, le pourcentage de <span className="font-semibold">chaque BU</span> est
-            détaillé sous la moyenne. Cliquez une barre pour voir le détail par BU
-            dans le tableau ci-dessous.
+            détaillé sous la moyenne.{" "}
+            <span className="font-semibold text-brand-blue">
+              Cliquez une barre pour ouvrir le texte juridique en lecture immersive
+            </span>{" "}
+            (touche Échap pour revenir).
           </p>
           {groupes.length === 0 ? (
             <p className="py-6 text-center text-sm text-slate-400">
@@ -716,12 +722,16 @@ export default function DashboardPage() {
                   <li key={g.numeroOrdre}>
                     <button
                       type="button"
-                      onClick={() => setTexteOuvert(actif ? null : g.numeroOrdre)}
-                      title={`${g.referenceTexte} — ${g.fiches.map((f) => `${f.departement} : ${f.tauxAvancement} %`).join(", ")} — voir le détail par BU`}
-                      className={`w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                      onClick={() => {
+                        setTexteImmersif(g.numeroOrdre);
+                        setTexteOuvert(g.numeroOrdre);
+                      }}
+                      title={`Ouvrir le texte « ${g.referenceTexte} » en lecture immersive`}
+                      aria-haspopup="dialog"
+                      className={`group w-full rounded-lg border px-3 py-2 text-left transition-colors ${
                         actif
                           ? "border-brand-gold bg-brand-gold/10"
-                          : "border-slate-100 bg-slate-50 hover:border-brand-blue/40 hover:bg-brand-blue/5"
+                          : "border-slate-100 bg-slate-50 hover:border-brand-blue hover:bg-brand-blue/5"
                       }`}
                     >
                       <span className="flex items-center justify-between gap-2 text-xs">
@@ -738,11 +748,16 @@ export default function DashboardPage() {
                           ⌀ {g.tauxMoyen} %
                         </span>
                       </span>
-                      <span className="mt-1.5 block h-2.5 overflow-hidden rounded-full bg-slate-200">
-                        <span
-                          className={`block h-full rounded-full ${couleurNiveau(g.tauxMoyen)}`}
-                          style={{ width: `${g.tauxMoyen}%` }}
-                        />
+                      <span className="mt-1.5 flex items-center gap-2">
+                        <span className="h-2.5 flex-1 overflow-hidden rounded-full bg-slate-200">
+                          <span
+                            className={`block h-full rounded-full ${couleurNiveau(g.tauxMoyen)}`}
+                            style={{ width: `${g.tauxMoyen}%` }}
+                          />
+                        </span>
+                        <span className="shrink-0 text-[11px] font-semibold text-slate-400 opacity-0 transition-opacity group-hover:opacity-100">
+                          👁 lire le texte
+                        </span>
                       </span>
                       {/* Texte multi-BU : le pourcentage de chaque BU sous la moyenne. */}
                       {g.fiches.length > 1 && (
@@ -1056,6 +1071,37 @@ export default function DashboardPage() {
           </div>
         </section>
       </main>
+
+      {/* VUE IMMERSIVE — ouverte au clic sur une barre du graphique */}
+      <VueTexteImmersive
+        texte={
+          texteImmersif
+            ? (groupes.find((g) => g.numeroOrdre === texteImmersif) ?? null)
+            : null
+        }
+        index={
+          texteImmersif
+            ? Math.max(
+                0,
+                groupes.findIndex((g) => g.numeroOrdre === texteImmersif),
+              )
+            : 0
+        }
+        total={groupes.length}
+        onPrecedent={() =>
+          setTexteImmersif((prec) => {
+            const i = groupes.findIndex((g) => g.numeroOrdre === prec);
+            return i > 0 ? groupes[i - 1].numeroOrdre : prec;
+          })
+        }
+        onSuivant={() =>
+          setTexteImmersif((suiv) => {
+            const i = groupes.findIndex((g) => g.numeroOrdre === suiv);
+            return i >= 0 && i < groupes.length - 1 ? groupes[i + 1].numeroOrdre : suiv;
+          })
+        }
+        onFermer={() => setTexteImmersif(null)}
+      />
     </div>
   );
 }
