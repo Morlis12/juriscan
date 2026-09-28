@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { connecter } from "@/lib/comptes";
+import { chargerComptes, connecter } from "@/lib/comptes";
 import { creerCookieSession, COOKIE_SESSION, optionsCookie } from "@/lib/session";
 
 /**
@@ -51,10 +51,15 @@ export async function POST(req: Request) {
   const resultat = await connecter(email, motDePasse);
   if (!resultat.ok) {
     if (resultat.motif === "AUCUN_COMPTE") {
+      // L'aide dépend de l'environnement : en local on a un fichier, en ligne
+      // (Vercel) il n'y a ni base ni fichier persistant → variable d'env.
       return NextResponse.json(
         {
           error:
-            "Aucun compte configuré sur ce serveur. Lancez « npm run acces:init » puis réessayez.",
+            process.env.NODE_ENV === "production"
+              ? "Aucun accès configuré sur ce serveur. L'administrateur doit définir la variable d'environnement JURISCAN_COMPTES (voir docs/deploiement-vercel.md), puis redéployer."
+              : "Aucun accès configuré sur ce serveur. Lancez « npm run acces:init » puis réessayez.",
+          source: (await chargerComptes()).source,
         },
         { status: 503 },
       );

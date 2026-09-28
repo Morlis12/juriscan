@@ -130,7 +130,10 @@ export default function ConnexionPage() {
           <p className="border-t border-slate-200 pt-3 text-[11px] text-slate-500">
             Identifiants perdus ou premier démarrage ? Lancez{" "}
             <code className="rounded bg-slate-100 px-1">npm run acces:init</code> — les
-            mots de passe ne sont affichés qu&apos;à la création.
+            mots de passe ne sont affichés qu&apos;à la création. Sur un déploiement
+            en ligne, l&apos;administrateur doit à la place définir la variable
+            d&apos;environnement <code className="rounded bg-slate-100 px-1">JURISCAN_COMPTES</code>{" "}
+            puis redéployer.
           </p>
         </div>
       </div>
