@@ -12,13 +12,20 @@ import { NextResponse } from "next/server";
  */
 
 import { creerFicheVeille, creerFichesVeilleMulti } from "@/lib/veille-save";
-import { fusionnerAuteur, lireAuteur, lireAuteurDepuisCorps } from "@/lib/acces";
+import { lireAuteur, sessionOuverte } from "@/lib/acces";
 import { estCentrale } from "@/domain/acces";
 
 export async function POST(req: Request) {
   try {
     const corps = await req.json();
-    const auteur = fusionnerAuteur(lireAuteur(req), lireAuteurDepuisCorps(corps));
+    if (!(await sessionOuverte(req))) {
+      return NextResponse.json(
+        { error: "Session expirée ou absente : reconnectez-vous." },
+        { status: 401 },
+      );
+    }
+    // La BU et l'identité viennent du cookie de session signé, jamais du corps.
+    const auteur = await lireAuteur(req);
     if (!auteur.bu || !estCentrale(auteur.bu)) {
       return NextResponse.json(
         { error: "Création / assignation : réservée à la centrale (CENTRAL_VRG)." },

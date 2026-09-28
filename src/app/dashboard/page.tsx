@@ -12,7 +12,7 @@ import { messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValider
 import { dureeDepuis, formaterDateFR, formaterDateHeureFR } from "@/domain/jalons";
 import { BUILD_DATE_ISO } from "@/generated/build-info";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
-import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import { useBuConnectee, PastilleSession } from "@/components/SessionBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
 import { VueTexteImmersive } from "@/components/VueTexteImmersive";
@@ -153,7 +153,7 @@ export default function DashboardPage() {
   const [confirmation, setConfirmation] = useState<string | null>(null);
   const [avertissement, setAvertissement] = useState<string | null>(null);
   // BU connectée (cloisonnement) : seule votre BU modifie ses assignations.
-  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
+  const { bu: buConnectee, estCentrale: estCentraleSession } = useBuConnectee();
   // Vue générale unique + filtres multicritères du pilotage de veille.
   const [filtreBU, setFiltreBU] = useState<FiltreBUCode>("ALL");
   const [filtreDate, setFiltreDate] = useState("");
@@ -284,10 +284,15 @@ export default function DashboardPage() {
     [toutesAlertes],
   );
 
+  // Contrainte de session : une direction ne voit que ses fiches, quelle que
+  // soit la case à cocher. Seule la centrale (vueGlobale) filtre librement.
+  const vueGlobale = estCentraleSession || buConnectee === null;
+  const buVisible = vueGlobale ? filtreBU : buConnectee;
+
   const alertesBase = useMemo(() => {
     const terme = recherche.trim().toLowerCase();
     return toutesAlertes.filter((a) => {
-      if (filtreBU !== "ALL" && a.departement !== filtreBU) return false;
+      if (buVisible !== "ALL" && a.departement !== buVisible) return false;
       if (filtreType !== "ALL" && a.natureTexte !== filtreType) return false;
       if (filtreDate && a.dateEntreeVigueur !== filtreDate) return false;
       if (
@@ -297,7 +302,7 @@ export default function DashboardPage() {
         return false;
       return true;
     });
-  }, [toutesAlertes, filtreBU, filtreType, filtreDate, recherche]);
+  }, [toutesAlertes, buVisible, filtreType, filtreDate, recherche]);
 
   // Filtre workflow : approuvés, en attente (juridique / métier), rejetés.
   const alertes = useMemo(
@@ -339,7 +344,7 @@ export default function DashboardPage() {
     try {
       const reponse = await fetch(`/api/veille/${encodeURIComponent(id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        headers: { "Content-Type": "application/json", },
         body: JSON.stringify({ fluxStatut: "ATTENTE_APPROBATION_METIER" }),
       });
       if (!reponse.ok) {
@@ -362,7 +367,7 @@ export default function DashboardPage() {
     try {
       const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        headers: { "Content-Type": "application/json", },
         body: JSON.stringify({ tauxAvancement: valeur }),
       });
       if (!reponse.ok) {
@@ -439,8 +444,13 @@ export default function DashboardPage() {
   );
   const tauxMoyen = useMemo(() => tauxConformiteMoyen(alertes), [alertes]);
 
-  const perimetreLabel =
-    filtreBU === "ALL" ? "Vue générale" : DEPARTEMENTS[filtreBU as DepartementCode];
+  // Une direction ne voit que son périmètre : le filtre est calé sur sa session,
+  // seule la centrale peut basculer sur une autre BU ou sur la vue générale.
+  const perimetreLabel = vueGlobale
+    ? filtreBU === "ALL"
+      ? "Vue générale"
+      : DEPARTEMENTS[filtreBU as DepartementCode]
+    : DEPARTEMENTS[buConnectee] ?? "Ma direction";
 
   /** Dernière mise à jour (haut à droite) : plus récente des fiches affichées (date + heure). */
   const derniereMaj = useMemo(() => {
@@ -478,12 +488,12 @@ export default function DashboardPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <NavOnglets actif="pilotage" rejets={nbRejets} />
+            <NavOnglets actif="pilotage" estCentrale={estCentraleSession} rejets={nbRejets} />
             <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
             <span className="font-mono tabular-nums text-slate-100">
               {timeStr}
             </span>
-            <SelecteurBUConnectee />
+            <PastilleSession />
             {derniereMaj && (
               <span
                 title={`Fraîcheur de ce que vous regardez — données affichées${dureeDepuis(derniereMaj) ? ` (il y a ${dureeDepuis(derniereMaj)})` : ""} · application mise à jour le ${formaterDateHeureFR(BUILD_DATE_ISO)}`}
@@ -522,14 +532,19 @@ export default function DashboardPage() {
               <select
                 value={filtreBU}
                 onChange={(e) => setFiltreBU(e.target.value as FiltreBUCode)}
-                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue"
+                disabled={!vueGlobale}
+                className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 font-medium text-brand-blue disabled:bg-slate-100 disabled:text-slate-500"
               >
-                <option value="ALL">Toutes les BU</option>
-                {BU_OPTIONS.map((t) => (
-                  <option key={t.code} value={t.code}>
-                    {t.label}
-                  </option>
-                ))}
+                <option value="ALL">
+                  {vueGlobale ? "Toutes les BU" : "Ma direction"}
+                </option>
+                {(vueGlobale ? BU_OPTIONS : BU_OPTIONS.filter((t) => t.code === buConnectee)).map(
+                  (t) => (
+                    <option key={t.code} value={t.code}>
+                      {t.label}
+                    </option>
+                  ),
+                )}
               </select>
             </label>
             <label className="block rounded-lg border border-slate-200 px-3 py-2 text-sm">

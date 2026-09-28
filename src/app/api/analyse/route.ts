@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { sessionOuverte } from "@/lib/acces";
 import { PDFDocument } from "pdf-lib";
 
 /**
@@ -293,6 +294,12 @@ async function decouperPdf(base64Data: string): Promise<Tranche[]> {
 }
 
 export async function POST(req: Request) {
+  if (!(await sessionOuverte(req))) {
+    return NextResponse.json(
+      { error: "Session expirée ou absente : reconnectez-vous." },
+      { status: 401 },
+    );
+  }
   try {
     const body = await req.json();
     const { base64Data, mimeType } = body;

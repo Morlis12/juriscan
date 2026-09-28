@@ -12,7 +12,7 @@ import {
   type AlerteAnalyse21,
 } from "@/domain/nouvelle-alerte";
 import { peutCreerAlerte } from "@/domain/acces";
-import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import { useBuConnectee, PastilleSession } from "@/components/SessionBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
 import {
@@ -92,7 +92,7 @@ function fichierVersBase64Pur(f: File): Promise<string> {
 
 export default function NouvelleAlertePage() {
   const router = useRouter();
-  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
+  const { bu: buConnectee, email: emailConnecte , estCentrale: estCentraleSession } = useBuConnectee();
   const inputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -532,7 +532,7 @@ export default function NouvelleAlertePage() {
       // Persistant : N textes + BU cochées → N alertes (une fiche par BU).
       const reponse = await fetch("/api/sauvegarde", {
         method: "POST",
-        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        headers: { "Content-Type": "application/json", },
         body: JSON.stringify({
           // idActe/valide sont des champs d'écran, ignorés par le serveur.
           actes: aEnregistrer,
@@ -655,9 +655,9 @@ export default function NouvelleAlertePage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <NavOnglets actif="assignation" />
+            <NavOnglets actif="assignation" estCentrale={estCentraleSession} />
             <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
-            <SelecteurBUConnectee />
+            <PastilleSession />
           </div>
         </div>
       </header>

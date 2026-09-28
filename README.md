@@ -88,6 +88,10 @@ npm run dev            # http://localhost:3000 → redirige vers /dashboard
 | `npm run lint` | ESLint |
 | `npm run db:generate` / `db:push` / `db:migrate` / `db:studio` | Client Prisma / schéma / migrations / explorateur |
 | `npm run pptx` | Régénère `AGL-JuriCompliance-Presentation.pptx` (voir § Support) |
+| `npm run acces:init` | Crée les accès par direction + les comptes nominatifs (voir § Accès par direction) |
+
+**Accès obligatoire** : sans session, l'application renvoie vers `/connexion`.
+Lancez `npm run acces:init` au premier démarrage (voir § Accès par direction).
 
 Sans `DATABASE_URL` (ou sans clé Gemini), l'appli fonctionne en **mode démo** :
 mocks visibles + historique simulé, repli silencieux des appels SQL.
@@ -120,7 +124,7 @@ src/
       historique/page.tsx       # journal consultable (filtres + badges démo/réel)
       memo/page.tsx               # mémo d'utilisation (guide structuré des indicateurs et règles)
   components/
-    ContexteBU.tsx              # BU connectée (localStorage + event même-onglet) + sélecteur
+    SessionBU.tsx               # session serveur (qui est-je ?) + pastille d'identité/déconnexion
     LogoAGL.tsx                 # logo officiel (next/image)
     NavOnglets.tsx              # barre de boutons partagée (Tableau de bord · Assignation ·
                                 # Approbation · Rejet · Historique · Mémo ; Assignation = CTA or)
@@ -142,6 +146,11 @@ src/
     historique.ts               # versionnerFiche/Action + journaliser (transactions SCD2)
     veille-save.ts              # création Alerte + N fiches + journal CREATION
     dataverse/tables.ts         # MAPPING DATAVERSE (7 tables, OptionSets, relations, rôles)
+    mots-de-passe.ts           # scrypt : hachage selé, comparaison à temps constant
+    comptes.ts                  # comptes (base / fichier / env) + connexion
+    session.ts                  # cookie de session signé HMAC (httpOnly)
+    acces.ts                    # LECTURE DE L'AUTEUR — session signée uniquement
+                                # (plus aucun en-tête x-bu-connectee)
     brouillon-scan.ts           # CONSERVATION DU SCAN (IndexedDB + repli localStorage,
                                 # version allégée si quota, migration) — pur navigateur
 prisma/schema.prisma            # 7 modèles : User, VeilleAlerte, VeilleFiche (+SCD2),
@@ -153,7 +162,8 @@ scripts/build-info.mjs          # horodate chaque build/dev → src/generated/bu
                                 # (date de l'application, ignoré par Git)
 scripts/build-presentation.mjs  # génère la présentation (6 slides, icônes, transitions,
                                 # notes de l'orateur) → AGL-JuriCompliance-Presentation.pptx
-scripts/lib/                     #/modules de génération OOXML (zip, formes/icônes, paquet)
+scripts/init-comptes.mjs        # npm run acces:init : accès par direction + comptes
+scripts/lib/                     # modules de génération OOXML (zip, formes/icônes, paquet)
 ```
 
 ## Conservation du scan — rien ne se paie deux fois
@@ -183,6 +193,72 @@ navigateur, même code transposable côté portail) :
   est converti en lot au premier chargement — le travail en cours n'est pas perdu.
 - Seul le **fichier binaire** n'est pas conservé (trop lourd) : relancer une analyse
   sur le même document suppose de le re-déposer, actes et assignations restent intacts.
+
+## Accès par direction — une vue et un mot de passe par BU
+
+Chaque direction a **sa vue** de l'application et **son propre mot de passe**.
+Remplace le sélecteur de BU qui laissait choisir n'importe quelle direction.
+
+### Mise en route (obligatoire avant d'ouvrir l'application)
+
+```bash
+npm run acces:init     # crée 8 accès de direction + 9 comptes nominatifs
+```
+
+Les mots de passe s'affichent **une seule fois**, dans le terminal. Le fichier
+`acces.local.json` (racine, **ignoré par Git**) ne contient que des condensats
+scrypt et le secret de session. `-- --force` réinitialise tout, `-- --mdp=…`
+impose le même mot de passe (recette uniquement).
+
+### Deux types de comptes, deux types de vue
+
+| Type | Identifiant | Pour qui | Trace dans le journal |
+|---|---|---|---|
+| `DIRECTION` | `direction-<bu>@agl.ci` | Accès partagé de la direction (agent de permanence) | « la direction » |
+| `PERSONNE` | email AGL (`veille@agl.ci`, `juridique@agl.ci`…) | Unagent, les droits suivent sa BU | Son nom et son email |
+
+- **Vue d'une direction** : tableau de bord restreint à ses fiches (le filtre BU
+  est calé sur la session, pas de « Toutes les BU »), sa file d'approbation,
+  ses KPI. Les onglets **Assignation** et **Rejet**, réservés à la centrale,
+  ne lui sont pas proposés.
+- **Vue de la centrale** (`CENTRAL_VRG`) : vue générale, assignation, rejets.
+- L'API applique exactement la même règle : une session `DJ` reçoit **403** sur
+  `POST /api/sauvegarde` (réservé à la centrale) et **401** sans session.
+
+### Comment c'est protégé (et ce qui a changé)
+
+- 🔴 **Avant**, la BU venait de l'en-tête `x-bu-connectee` : `curl -H
+  "x-bu-connectee: DJ"` bypassait **tous** les contrôles 401/403. Les accès
+  n'étaient réels que dans l'interface.
+- 🟢 **Maintenant**, la BU et l'identité sont déduites **exclusivement du cookie
+  de session signé par le serveur** (HMAC-SHA256). L'en-tête et le corps JSON ne
+  sont plus lus : un cookie forgé est rejeté, un cookie expiré aussi.
+- Mots de passe **scrypt** (sel 16 octets aléatoire par compte, comparaison à
+  temps constant), jamais en clair, jamais dans Git. Limitation de débit :
+  10 tentatives par identifiant par quart d'heure.
+- `/dashboard/**` est protégé par `src/app/dashboard/layout.tsx` (redirection
+  `/connexion`), chaque route métier par `sessionOuverte(req)` (401).
+- Réponse de connexion volontairement neutre (« identifiants invalides ») et
+  hachage factice quand le compte est inconnu : impossible d'énumérer les comptes.
+
+### Où vivent les identifiants
+
+1. **Base** `User` (si `DATABASE_URL` est défini) : `motDePasseHash`,
+   `typeCompte`, `actif`, `motDePasseProvisoire` — après `npm run db:push`.
+2. **Fichier serveur** `acces.local.json` (ignoré par Git) : réceptions et démo
+   sans base.
+3. **Variable d'environnement** `JURISCAN_COMPTES` (JSON) : plateformes sans
+   système de fichiers permanent (Vercel). Secret : `SESSION_SECRET`.
+
+Si aucun compte n'est configuré, **aucune connexion n'est possible** et l'écran
+de connexion l'explique : pas de repli ouvert.
+
+### Migration Microsoft
+
+`lireSession` (serveur) et `<PastilleSession />` (interface) sont les **deux
+seuls points** à remplacer par l'Entra ID / Web Roles de Power Pages. Tout le
+reste (droits, filtres par BU, routes) est déjà dans la forme attendue : la BU
+arrive du jeton, plus du navigateur.
 
 ## Accès — cloisonnement strict par BU
 
@@ -259,9 +335,10 @@ Aucune colonne ajoutée — réutilisation du modèle SCD2 (tables concernées :
   **AGL JuriCompliance BU** (lecture globale, écriture si `departement` == équipe — DJ
   incluse) ; rôle **AGL JuriCompliance Centrale** (création, assignation, flux,
   réassignation ; écriture bloquée sur la conformité BU).
-- Authentification : remplacer le sélecteur prototype par l'utilisateur
-  **Entra ID** (Web Roles → BU) ; `src/lib/acces.ts` (`lireAuteur`) est le seul
-  point à basculer (en-têtes `x-bu-connectee`/`x-user-email` → JWT).
+- Authentification : **Entra ID** (Web Roles → BU). Deux points à basculer —
+  `lireSession` (serveur, lecture du JWT) et `<PastilleSession />` (interface).
+  Les colonnes `typeCompte`/`actif`/`motDePasseHash` de la table `User` ne sont
+  alors plus alimentées : Power Pages assure l'authentification.
 - Dates : `createdon` (= assignation), `modifiedon` (= dernière modif),
   `VeilleJournal` (validation / renvoi / rejet / approbation) — voir § Jalons.
 - Logo : téléverser `public/logo-agl.png` comme « Site Logo » du portail

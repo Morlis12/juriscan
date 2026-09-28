@@ -89,6 +89,15 @@ export const DATAVERSE_TABLES: Record<string, DataverseTable> = {
       { logicalName: "firstname", displayName: "Prénom", dataType: "SingleLineOfText" },
       { logicalName: "lastname", displayName: "Nom", dataType: "SingleLineOfText" },
       { logicalName: "departement", displayName: "Département", dataType: "OptionSet" },
+      // Accès : PERSONNE (compte nominatif) ou DIRECTION (accès partagé d'une BU).
+      { logicalName: "typecompte", displayName: "Type de compte", dataType: "OptionSet" },
+      { logicalName: "actif", displayName: "Actif", dataType: "TwoOptions" },
+      // ⚠️ Colonne NON REPRISE telle quelle côté portail : Power Pages /
+      // Entra ID assure l'authentification. Si l'on conserve un stockage
+      // local, `motdepassehash` ne contient qu'un condensat scrypt — jamais un
+      // mot de passe en clair, jamais dans un dépôt Git.
+      { logicalName: "motdepassehash", displayName: "Condensat du mot de passe (scrypt)", dataType: "MultipleLinesOfText" },
+      { logicalName: "dernieracces", displayName: "Dernier accès", dataType: "DateTime" },
     ],
   },
   VeilleAlerte: {

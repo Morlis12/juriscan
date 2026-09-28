@@ -9,8 +9,15 @@ import { NextResponse } from "next/server";
  */
 
 import { prisma } from "@/lib/prisma";
+import { sessionOuverte } from "@/lib/acces";
 
 export async function GET(req: Request) {
+  if (!(await sessionOuverte(req))) {
+    return NextResponse.json(
+      { error: "Session expirée ou absente : reconnectez-vous." },
+      { status: 401 },
+    );
+  }
   try {
     const url = new URL(req.url);
     const ficheId = url.searchParams.get("ficheId")?.trim() || null;

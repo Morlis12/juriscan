@@ -27,6 +27,18 @@ model User {
   departement DepartementCode @default(CENTRAL_VRG)
   createdAt DateTime        @default(now())
 
+  // ——— AUTHENTIFICATION (mots de passe différents par direction) ———
+  // Condensat scrypt : jamais de mot de passe en clair, jamais dans un dépôt.
+  // `typeCompte` : PERSONNE (compte nominatif, traçabilité individuelle) ou
+  // DIRECTION (accès partagé d'une BU, une seule adresse par direction).
+  // Un compte ne peut servir qu'après `npm run acces:init` (ou import Dataverse).
+  motDePasseHash     String?   @db.Text
+  typeCompte         String    @default("PERSONNE")
+  actif              Boolean   @default(true)
+  /// Mot de passe de création jamais changé → à changer à la première connexion.
+  motDePasseProvisoire Boolean  @default(true)
+  dernierAcces       DateTime?
+
   // Relations
   actionsAssignees VeilleAction[] @relation("ResponsableAction")
 }

@@ -15,7 +15,7 @@ import {
 import { messageAccesRefuse, peutStatuerAssignation } from "@/domain/acces";
 import { debutAttente, dureeDepuis, formaterDateFR } from "@/domain/jalons";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
-import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import { useBuConnectee, PastilleSession } from "@/components/SessionBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
@@ -113,8 +113,11 @@ const STATUTS_CONFORMITE: { code: ConformiteStatut; label: string }[] = [
 export default function ApprobationsPage() {
   // File affichée (démo) + BU réellement connectée (cloisonnement) : seule la
   // BU connectée peut approuver / rejeter ses assignations.
-  const [bu, setBu] = useState<BUConcernee>("DRH");
-  const { bu: buConnectee, email: emailConnecte, changerBU: connecterBU } = useBuConnectee();
+  const { bu: buSession, estCentrale: estCentraleSession } = useBuConnectee();
+  // La BU vient de la session serveur : plus aucun choix possible dans l
+  // écran. La file affichée est donc toujours celle de ma direction.
+  const bu = (buSession ?? "DRH") as BUConcernee;
+  const buConnectee = buSession;
   const [fiches, setFiches] = useState<FicheApprobation[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [formOuvert, setFormOuvert] = useState<string | null>(null);
@@ -264,7 +267,7 @@ export default function ApprobationsPage() {
     try {
       const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        headers: { "Content-Type": "application/json", },
         body: JSON.stringify({ fluxStatut: "REJETE_METIER" }),
       });
       if (!reponse.ok) {
@@ -317,7 +320,7 @@ export default function ApprobationsPage() {
     try {
       const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        headers: { "Content-Type": "application/json", },
         body: JSON.stringify({
           fluxStatut: "APPROUVE_METIER",
           libelleAction: libelleAction.trim(),
@@ -372,9 +375,9 @@ export default function ApprobationsPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <NavOnglets actif="approbation" />
+            <NavOnglets actif="approbation" estCentrale={estCentraleSession} />
             <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
-            <SelecteurBUConnectee />
+            <PastilleSession />
           </div>
         </div>
       </header>
@@ -388,33 +391,21 @@ export default function ApprobationsPage() {
                 File d&apos;approbation affichée
               </h2>
               <p className="mt-1 text-xs text-slate-500">
-                Choisissez la file à afficher — ce choix connecte aussi cette BU (sélecteur en haut
-                synchronisé) : ses fiches deviennent approuvables / rejetables, les autres restent
-                verrouillées 🔒. Connecté : <span className="font-semibold">{buConnectee}</span>.
+                Voici les assignations de votre direction : elles sont approuvables
+                ou rejetables. Les autres directions restent verrouillées 🔒 — votre
+                session est reliée à{" "}
+                <span className="font-semibold">{DEPARTEMENTS[bu]}</span> et ne permet
+                d&apos;agir que sur vos propres fiches.
               </p>
             </div>
-            <label className="flex items-center gap-2 text-sm">
+            <span className="flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-sm">
               <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                BU
+                File de
               </span>
-              <select
-                value={bu}
-                onChange={(e) => {
-                  const code = e.target.value as BUConcernee;
-                  setBu(code);
-                  connecterBU(code);
-                  setFormOuvert(null);
-                  setMessage(null);
-                }}
-                className="rounded-md border border-slate-300 bg-white px-3 py-1.5 font-bold text-brand-blue"
-              >
-                {BU_PROPOSITIONNABLES.map((code) => (
-                  <option key={code} value={code}>
-                    {code} — {DEPARTEMENTS[code]}
-                  </option>
-                ))}
-              </select>
-            </label>
+              <span className="font-bold text-brand-blue">
+                {bu} — {DEPARTEMENTS[bu]}
+              </span>
+            </span>
           </div>
         </section>
 

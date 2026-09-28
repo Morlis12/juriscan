@@ -42,3 +42,4 @@ next-env.d.ts
 
 # généré à chaque build/dev (date de l'application — voir scripts/build-info.mjs)
 src/generated/
+acces.local.json

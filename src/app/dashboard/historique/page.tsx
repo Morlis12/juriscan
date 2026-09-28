@@ -11,7 +11,7 @@ import {
   type JournalEntree,
 } from "@/domain/historique";
 import { HISTORIQUE_DEMO } from "@/data/historique-demo";
-import { SelecteurBUConnectee, useBuConnectee } from "@/components/ContexteBU";
+import { useBuConnectee, PastilleSession } from "@/components/SessionBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
 
@@ -32,7 +32,7 @@ export default function HistoriquePage() {
 function HistoriqueContenu() {
   const search = useSearchParams();
   const ficheFiltre = search.get("fiche") ?? "";
-  const { bu: buConnectee } = useBuConnectee();
+  const { bu: buConnectee , estCentrale: estCentraleSession } = useBuConnectee();
   const [entrees, setEntrees] = useState<JournalEntree[]>([]);
   const [chargement, setChargement] = useState(true);
   const [filtreBU, setFiltreBU] = useState<"ALL" | DepartementCode>("ALL");
@@ -102,9 +102,9 @@ function HistoriqueContenu() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <NavOnglets actif="historique" />
+            <NavOnglets actif="historique" estCentrale={estCentraleSession} />
             <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
-            <SelecteurBUConnectee />
+            <PastilleSession />
           </div>
         </div>
       </header>

@@ -20,11 +20,7 @@ import {
   type FicheVeillePayload,
   type PreuveFichierDonnees,
 } from "@/lib/veille-save";
-import {
-  fusionnerAuteur,
-  lireAuteur,
-  lireAuteurDepuisCorps,
-} from "@/lib/acces";
+import { lireAuteur, sessionOuverte } from "@/lib/acces";
 import {
   diffChamps,
   journaliser,
@@ -106,10 +102,16 @@ export async function PUT(
       responsable?: unknown;
       actionId?: unknown;
     };
-    const auteur = fusionnerAuteur(lireAuteur(req), lireAuteurDepuisCorps(b));
+    const auteur = await lireAuteur(req);
+    if (!(await sessionOuverte(req))) {
+      return NextResponse.json(
+        { error: "Session expirée ou absente : reconnectez-vous." },
+        { status: 401 },
+      );
+    }
     if (!auteur.bu) {
       return NextResponse.json(
-        { error: "BU connectée manquante (en-tête x-bu-connectee requis)." },
+        { error: "Identité de session invalide : reconnectez-vous." },
         { status: 401 },
       );
     }
@@ -467,10 +469,16 @@ export async function PATCH(
       buConnectee?: unknown;
       emailConnecte?: unknown;
     };
-    const auteur = fusionnerAuteur(lireAuteur(req), lireAuteurDepuisCorps(b));
+    const auteur = await lireAuteur(req);
+    if (!(await sessionOuverte(req))) {
+      return NextResponse.json(
+        { error: "Session expirée ou absente : reconnectez-vous." },
+        { status: 401 },
+      );
+    }
     if (!auteur.bu) {
       return NextResponse.json(
-        { error: "BU connectée manquante (en-tête x-bu-connectee requis)." },
+        { error: "Identité de session invalide : reconnectez-vous." },
         { status: 401 },
       );
     }

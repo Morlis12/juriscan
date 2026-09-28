@@ -11,7 +11,7 @@ import { CONFORMITE_POURCENTAGE, DEPARTEMENTS } from "@/domain/veille";
 import { dureeDepuis, formaterDateFR } from "@/domain/jalons";
 import { jalonsDemoPourFiche } from "@/data/historique-demo";
 import { estCentrale, peutGererRejet } from "@/domain/acces";
-import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import { useBuConnectee, PastilleSession } from "@/components/SessionBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
 import { MOCK_ALERTES, type MockAlerte } from "@/data/veille-mock";
@@ -75,7 +75,7 @@ export default function RejetsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [traitement, setTraitement] = useState(false);
   // Retraitement réservé à la centrale ; les BU voient leurs rejets en lecture.
-  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
+  const { bu: buConnectee, estCentrale: estCentraleSession } = useBuConnectee();
   const centrale = estCentrale(buConnectee);
 
   useEffect(() => {
@@ -161,7 +161,7 @@ export default function RejetsPage() {
     try {
       const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
-        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        headers: { "Content-Type": "application/json", },
         body: JSON.stringify({ fluxStatut: "ATTENTE_APPROBATION_METIER" }),
       });
       if (!reponse.ok) {
@@ -193,9 +193,9 @@ export default function RejetsPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <NavOnglets actif="rejet" />
+            <NavOnglets actif="rejet" estCentrale={estCentraleSession} />
             <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
-            <SelecteurBUConnectee />
+            <PastilleSession />
           </div>
         </div>
       </header>

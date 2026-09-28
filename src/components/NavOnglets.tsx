@@ -25,13 +25,16 @@ export type OngletActif =
   | "historique"
   | "memo";
 
-const ONGLETS: {
+/** Les 6 boutons, dans l'ordre du parcours (interface de base = Tableau de bord). */
+const TOUS: {
   cle: OngletActif;
   href: string;
   icone: string;
   libelle: string;
   titre: string;
   principal?: boolean;
+  /** Réservé à la centrale (veille réglementaire générale). */
+  centrale?: boolean;
 }[] = [
   {
     cle: "pilotage",
@@ -47,13 +50,14 @@ const ONGLETS: {
     libelle: "Assignation",
     titre: "Charger un PDF ou faire la saisie manuelle, puis affecter chaque acte à sa direction",
     principal: true,
+    centrale: true,
   },
   {
     cle: "approbation",
     href: "/dashboard/approbations",
     icone: "✔",
     libelle: "Approbation",
-    titre: "File d'approbation : chaque direction approuve ou rejette son assignation",
+    titre: "File d'approbation : votre direction approuve ou rejette ses assignations",
   },
   {
     cle: "rejet",
@@ -61,6 +65,7 @@ const ONGLETS: {
     icone: "⚠",
     libelle: "Rejet",
     titre: "Assignations refusées par les BU, à retraiter par la centrale",
+    centrale: true,
   },
   {
     cle: "historique",
@@ -88,16 +93,24 @@ export function NavOnglets({
   actif,
   rejets,
   historiqueHref,
+  estCentrale = true,
 }: {
   actif?: OngletActif;
   /** Nombre de rejets à traiter — pastille rouge sur le bouton (optionnel). */
   rejets?: number;
   /** Cible de l'onglet Historique — la fiche peut passer son propre filtre. */
   historiqueHref?: string;
+  /**
+   * Une direction ne voit pas les écrans de la centrale (Assignation, Rejet) :
+   * sa vue s'arrête là où ses droits s'arrêtent. L'API applique la même règle
+   * côté serveur (403) — l'interface ne fait que ne pas proposer l'écran.
+   */
+  estCentrale?: boolean;
 }) {
+  const onglets = estCentrale ? TOUS : TOUS.filter((o) => !o.centrale);
   return (
     <nav aria-label="Navigation principale" className="flex flex-wrap items-center gap-1.5">
-      {ONGLETS.map((onglet) => {
+      {onglets.map((onglet) => {
         const href =
           onglet.cle === "historique" && historiqueHref
             ? historiqueHref

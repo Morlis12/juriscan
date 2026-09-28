@@ -6,7 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import type { ConformiteStatut, DepartementCode, NatureTexte } from "@/domain/veille";
 import { NATURES_TEXTE, PERTINENCE_TRANSIT } from "@/domain/veille";
 import { estCentrale, messageAccesRefuse, peutOuvrirFiche } from "@/domain/acces";
-import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
+import { useBuConnectee, PastilleSession } from "@/components/SessionBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
 import type { JournalEntree } from "@/domain/historique";
@@ -79,7 +79,7 @@ const isoJour = (v: string | null): string => (v ?? "").slice(0, 10);
 export default function ModifierAlertePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
+  const { bu: buConnectee, email: emailConnecte , estCentrale: estCentraleSession } = useBuConnectee();
   const [form, setForm] = useState<AlerteAnalyse21 | null>(null);
   const [ficheBU, setFicheBU] = useState<DepartementCode | null>(null);
   const [actionId, setActionId] = useState<string | null>(null);
@@ -256,7 +256,7 @@ export default function ModifierAlertePage() {
     try {
       const reponse = await fetch(`/api/veille/${params.id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", ...entetesAuteur(buConnectee, emailConnecte) },
+        headers: { "Content-Type": "application/json", },
         body: JSON.stringify({
           ...form,
           buConnectee,
@@ -302,9 +302,9 @@ export default function ModifierAlertePage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <NavOnglets historiqueHref={`/dashboard/historique?fiche=${encodeURIComponent(params.id)}`} />
+            <NavOnglets estCentrale={estCentraleSession} historiqueHref={`/dashboard/historique?fiche=${encodeURIComponent(params.id)}`} />
             <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
-            <SelecteurBUConnectee />
+            <PastilleSession />
           </div>
         </div>
       </header>

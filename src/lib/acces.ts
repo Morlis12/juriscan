@@ -1,43 +1,50 @@
 /**
- * AGL JuriCompliance — Lecture de l'auteur côté serveur (pont prototype → Entra ID).
+ * AGL JuriCompliance — Lecture de l'auteur côté serveur.
  *
- * Prototype : l'auteur vient des en-têtes `x-bu-connectee` / `x-user-email`
- * posés par le client (`entetesAuteur`). Migration Microsoft : remplacer le
- * corps de `lireAuteur` par la vérification du JWT Entra ID / Power Pages
- * (Web Roles → BU) sans toucher les routes appelantes.
+ * ⚠️ Changement de sécurité majeur : la BU et l'identité viennent désormais
+ * **exclusivement du cookie de session signé** (voir `src/lib/session.ts`).
+ * Avant, elles étaient lues dans l'en-tête `x-bu-connectee` et dans le corps
+ * JSON : n'importe quel client pouvait forger une BU (`curl -H
+ * "x-bu-connectee: DJ"`) et bypasser toutes les règles d'accès. Ces deux
+ * sources ne sont plus lues.
+ *
+ * Migration Microsoft : remplacer le corps de `lireAuteur` par la lecture du
+ * JWT Entra ID / Power Pages (Web Roles → BU). Toutes les routes appelantes
+ * utilisent déjà cette fonction unique : un seul point à changer, comme
+ * auparavant.
  */
 
 import { DEPARTEMENT_CODES, type DepartementCode } from "@/domain/veille";
+import { lireSession, type Session } from "@/lib/session";
 
 export interface AuteurRequete {
   bu: DepartementCode | null;
   email: string | null;
+  /** `PERSONNE` (compte nominatif) ou `DIRECTION` (accès partagé). */
+  typeCompte: Session["type"] | null;
+  nom: string | null;
+  /** Session complète, ou `null` si personne n'est connecté. */
+  session: Session | null;
 }
 
-export function lireAuteur(req: Request): AuteurRequete {
-  const raw = req.headers.get("x-bu-connectee")?.trim().toUpperCase() ?? "";
-  const bu =
-    (DEPARTEMENT_CODES as string[]).includes(raw) ? (raw as DepartementCode) : null;
-  const emailRaw = req.headers.get("x-user-email")?.trim() ?? "";
-  const email = emailRaw.includes("@") ? emailRaw : null;
-  // Corps JSON de repli (clients qui postent { buConnectee }) — lu par les routes.
-  return { bu, email };
+const ANONIME: AuteurRequete = {
+  bu: null,
+  email: null,
+  typeCompte: null,
+  nom: null,
+  session: null,
+};
+
+/** Auteur de la requête, déduit de la session signée. Jamais d'en-tête. */
+export async function lireAuteur(req: Request): Promise<AuteurRequete> {
+  const session = await lireSession(req);
+  if (!session) return ANONIME;
+  const bu = (DEPARTEMENT_CODES as string[]).includes(session.bu) ? session.bu : null;
+  if (!bu) return ANONIME;
+  return { bu, email: session.email, typeCompte: session.type, nom: session.nom, session };
 }
 
-/** Même lecture depuis un corps JSON déjà parsé (repli prototype). */
-export function lireAuteurDepuisCorps(b: {
-  buConnectee?: unknown;
-  emailConnecte?: unknown;
-}): AuteurRequete {
-  const raw =
-    typeof b.buConnectee === "string" ? b.buConnectee.trim().toUpperCase() : "";
-  const bu =
-    (DEPARTEMENT_CODES as string[]).includes(raw) ? (raw as DepartementCode) : null;
-  const emailRaw = typeof b.emailConnecte === "string" ? b.emailConnecte.trim() : "";
-  return { bu, email: emailRaw.includes("@") ? emailRaw : null };
-}
-
-/** Fusionne en-têtes + corps (les en-têtes priment). */
-export function fusionnerAuteur(a: AuteurRequete, b: AuteurRequete): AuteurRequete {
-  return { bu: a.bu ?? b.bu, email: a.email ?? b.email };
+/** Une session est-elle ouverte ? (garde des routes API : 401 sinon) */
+export async function sessionOuverte(req: Request): Promise<boolean> {
+  return (await lireSession(req)) !== null;
 }

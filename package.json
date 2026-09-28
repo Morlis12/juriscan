@@ -12,7 +12,8 @@
     "db:push": "prisma db push",
     "db:migrate": "prisma migrate dev",
     "db:studio": "prisma studio",
-    "pptx": "node scripts/build-presentation.mjs"
+    "pptx": "node scripts/build-presentation.mjs",
+    "acces:init": "node --experimental-strip-types scripts/init-comptes.mjs"
   },
   "dependencies": {
     "@prisma/client": "^6.19.3",

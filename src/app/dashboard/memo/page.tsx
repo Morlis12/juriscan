@@ -1,16 +1,47 @@
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
-import { SelecteurBUConnectee } from "@/components/ContexteBU";
+import { PastilleSession, useBuConnectee } from "@/components/SessionBU";
 
 /**
  * AGL JuriCompliance — Mémo d'utilisation (guide complet, langage utilisateur).
- * Couvre toutes les fonctions : assignation multi-actes, documents multiples,
- * reprise du travail en cours, indicateurs, workflow, droits par BU, pertinence transit,
- * dates, historique, approbations et rejets.
+ * Couvre toutes les fonctions : accès par direction, assignation multi-actes,
+ * documents multiples, reprise du travail en cours, indicateurs, workflow,
+ * droits par BU, pertinence transit, dates, historique, approbations et rejets.
  * Accessible via le bouton « ⓘ Mémo » de la barre d'en-tête.
  */
 
 const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
+  {
+    titre: "Votre accès : une vue et un mot de passe par direction",
+    contenu: (
+      <ul className="list-disc space-y-1 pl-5">
+        <li>
+          <strong>Chaque direction a sa vue.</strong> Le tableau de bord ne montre
+          que vos fiches (filtre calé sur votre session), votre file
+          d&apos;approbation et vos indicateurs. La pastille en haut à droite
+          indique qui est connecté.
+        </li>
+        <li>
+          <strong>Deux accès par direction</strong> : un compte nominatif (votre
+          email AGL — vos modifications sont tracées à votre nom) ou un accès
+          partagé de la direction (<code>direction-&lt;bu&gt;@agl.ci</code>). Le
+          mot de passe de l&apos;un n&apos;ouvre pas l&apos;autre.
+        </li>
+        <li>
+          <strong>Réservé à la Veille Réglementaire Générale</strong> (centrale) :
+          l&apos;onglet <strong>Assignation</strong> (charger un PDF, affecter
+          chaque acte) et l&apos;onglet <strong>Rejet</strong>. Ces boutons
+          n&apos;apparaissent pas pour les autres directions, et l&apos;API
+          refuse l&apos;opération (403) même si l&apos;on contourne
+          l&apos;interface.
+        </li>
+        <li>
+          <strong>« Sortir »</strong> en haut à droite ferme la session. Sans
+          session, plus aucun écran ni aucune donnée n&apos;est accessible.
+        </li>
+      </ul>
+    ),
+  },
   {
     titre: "Nouvelle alerte : du dépôt aux actes",
     contenu: (
@@ -288,6 +319,7 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
 ];
 
 export default function MemoPage() {
+  const { estCentrale: estCentraleSession } = useBuConnectee();
   return (
     <div className="min-h-screen bg-slate-100">
       <header className="sticky top-0 z-50 bg-brand-blue text-white shadow-md">
@@ -302,9 +334,9 @@ export default function MemoPage() {
             </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
-            <NavOnglets actif="memo" />
+            <NavOnglets actif="memo" estCentrale={estCentraleSession} />
             <span aria-hidden="true" className="hidden h-6 w-px bg-white/20 sm:block" />
-            <SelecteurBUConnectee />
+            <PastilleSession />
           </div>
         </div>
       </header>

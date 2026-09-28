@@ -10,12 +10,19 @@ import { NextResponse } from "next/server";
  */
 
 import { prisma } from "@/lib/prisma";
+import { sessionOuverte } from "@/lib/acces";
 import { parseFicheRouteId } from "@/lib/veille-save";
 
 export async function GET(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> },
 ) {
+  if (!(await sessionOuverte(req))) {
+    return NextResponse.json(
+      { error: "Session expirée ou absente : reconnectez-vous." },
+      { status: 401 },
+    );
+  }
   const { id } = await params;
   const cible = parseFicheRouteId(id);
   if (!cible) {
