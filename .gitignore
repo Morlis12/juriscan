@@ -43,3 +43,6 @@ next-env.d.ts
 # généré à chaque build/dev (date de l'application — voir scripts/build-info.mjs)
 src/generated/
 acces.local.json
+
+# Liste locale des mots de passe de démonstration — NE JAMAIS COMMITTER
+ACCES-LOCAL.md
