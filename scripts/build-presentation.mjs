@@ -203,7 +203,7 @@ const notes = [];
     paras: [
       {
         runs: [
-          t("Du Journal Officiel à la conformité terrain : capter, extraire, assigner, piloter.", {
+          t("Du Journal Officiel à la conformité terrain : capter, extraire, assigner, piloter, prouver.", {
             sz: 12,
             color: "A9BAD2",
           }),
@@ -214,9 +214,9 @@ const notes = [];
 
   let cx = 56;
   for (const label of [
-    "Prototype fonctionnel",
-    "8 directions",
-    "Traçabilité intégrale",
+    "Accès par direction",
+    "Scan jamais perdu",
+    "Traçabilité SCD2",
     "Power Pages / Dataverse ready",
   ]) {
     const w = chipWidth(label, 9.5, 26);
@@ -310,7 +310,7 @@ const notes = [];
     {
       iconName: "warning",
       title: "Des risques qui se paient",
-      body: "Texte manqué, assignation floue, preuves éparpillées, actions en retard invisibles, aucune piste d'audit.",
+      body: "Texte manqué, assignation floue, preuves éparpillées, actions en retard invisibles — et aucun vrai cloisonnement des accès.",
     },
   ];
 
@@ -335,9 +335,10 @@ const notes = [];
   notes.push([
     "Le problème que l'on adresse n'est pas technique : c'est organisationnel.",
     "Aujourd'hui la conformité réglementaire se suit dans des fichiers séparés, direction par direction, et le Journal Officiel se dépouille à la main.",
-    "Les conséquences concrètes : des textes qui nous échappent, des assignations approximatives, des preuves introuvables et des retards que personne ne voit.",
+    "Les conséquences concrètes : des textes qui nous échappent, des assignations approximatives, des preuves introuvables, des retards que personne ne voit.",
+    "S'y ajoute un point de sécurité que nous avons mesuré : la BU était choisie dans le navigateur, l'API croyait l'en-tête envoyé par le client : n'importe qui pouvait se déclarer Direction Juridique. C'est corrigé, j'y viens.",
     "La réponse tient dans la ligne du bas : un document, plusieurs actes, une assignation par direction, un suivi, une traçabilité.",
-    "Ne pas entrer dans le détail technique ici : c'est l'objet de la slide suivante.",
+    "Ne pas entrer dans le détail technique ici : c'est l'objet des slides suivantes.",
   ]);
   slides.push({ slide, transition: transition("pushUp") });
 }
@@ -357,8 +358,8 @@ const notes = [];
     {
       iconName: "scan",
       title: "Sources",
-      body: "PDF ou image du Journal Officiel. Des fichiers de test sont fournis dans l'application pour la démonstration.",
-      tag: "PDF · image",
+      body: "Un ou plusieurs PDF / images déposés d'un coup ; analysés l'un après l'autre, chaque résultat conservé.",
+      tag: "N fichiers",
     },
     {
       iconName: "sparkle",
@@ -374,14 +375,14 @@ const notes = [];
     },
     {
       iconName: "database",
-      title: "Persistance",
-      body: "Prisma 6 / PostgreSQL : 7 tables, versions figées et journal — la traçabilité est dans le modèle, pas dans un rapport.",
+      title: "Persistance & accès",
+      body: "Prisma 6 / PostgreSQL : 7 tables, versions figées, journal — et les accès : scrypt + session signée par le serveur.",
       tag: "7 tables",
     },
     {
       iconName: "dashboard",
-      title: "Écrans & API",
-      body: "6 écrans (pilotage, nouvelle alerte, approbations, rejets, historique, mémo) et 6 routes API, les mêmes règles des deux côtés.",
+      title: "Écrans & accès par BU",
+      body: "6 écrans + 6 routes API, session obligatoire : chaque direction ne voit que ses fiches, avec son propre mot de passe.",
       tag: "6 écrans",
     },
   ];
@@ -435,7 +436,7 @@ const notes = [];
     paras: [{ runs: [t("Stack", { sz: 11, b: true, color: C.blue })] }],
   });
   let sx = M + 108;
-  for (const tech of ["Next.js 16", "React 19", "Tailwind v4", "TypeScript strict", "ESLint", "zod", "pdf-lib"]) {
+  for (const tech of ["Next.js 16", "React 19", "Tailwind v4", "TypeScript strict", "scrypt", "session HMAC", "IndexedDB"]) {
     const w = chip(slide, {
       x: sx,
       y: 456,
@@ -453,10 +454,11 @@ const notes = [];
   titles.push("02 — Architecture");
   notes.push([
     "Voici ce que contient réellement l'application, couche par couche.",
-    "En haut la source : un PDF ou une image, rien de plus. Au centre l'extraction par IA, qui transforme un document en actes distincts — un Journal Officiel contient des dizaines d'actes, on ne les fusionne jamais.",
+    "En haut la source : on peut déposer plusieurs PDF d'un coup. Ils sont analysés l'un après l'autre — c'est plus lent, mais chaque résultat est conservé dès qu'il arrive et un échec n'annule pas les autres.",
+    "L'extraction transforme un document en actes distincts : un Journal Officiel contient des dizaines d'actes, on ne les fusionne jamais.",
     "Le point important est le domaine métier : il est écrit sans Next.js ni Prisma. C'est ce qui rend la migration Dataverse possible sans réécrire la logique.",
-    "La persistance porte déjà le versioning et le journal : la traçabilité n'est pas une option ajoutée après coup.",
-    "Et enfin six écrans, une API qui applique exactement les mêmes règles que l'interface.",
+    "Quatrième couche, la persistance et l'accès : les 7 tables portent la traçabilité, et les accès sont gérés côté serveur — mot de passe haché, session signée.",
+    "Enfin les écrans : six, et la même règle des deux côtés de l'API.",
   ]);
   slides.push({ slide, transition: transition("pushLeft") });
 }
@@ -525,12 +527,12 @@ const notes = [];
     {
       iconName: "gear",
       title: "La centrale — Veille Réglementaire Générale",
-      body: "Crée les alertes, assigne les directions, corrige le texte source, fait avancer le flux et retraite les rejets. Elle ne touche jamais à la conformité d'une direction.",
+      body: "Crée les alertes, assigne les directions, corrige le texte source, fait avancer le flux et retraite les rejets. Vue générale : elle ne touche jamais à la conformité d'une direction.",
     },
     {
       iconName: "lock",
       title: "Chaque direction, cloisonnée",
-      body: "Elle ne voit et ne modifie que ses propres fiches — Direction Juridique comprise, sans exception. Contrôle appliqué dans l'interface comme dans l'API (401 / 403).",
+      body: "Connexion obligatoire, mot de passe propre à la direction : elle ne voit et ne modifie que ses fiches — Direction Juridique comprise. Écrans Assignation et Rejet absents, API en 403.",
     },
   ];
   panels.forEach((spec, i) => {
@@ -577,14 +579,14 @@ const notes = [];
 
   const cards = [
     {
-      iconName: "clock",
-      title: "Historique SCD type 2",
-      body: "Chaque enregistrement fige la version précédente (validFrom, validTo, isCurrent) et écrit dans un journal lisible.",
+      iconName: "refresh",
+      title: "Un scan ne se perd jamais",
+      body: "Un document scanné reste enregistré tant qu'il n'est pas assigné : changer d'onglet, quitter la page, revenir le lendemain — rien ne disparaît.",
     },
     {
       iconName: "lock",
-      title: "Cloisonnement strict",
-      body: "Une direction ne modifie que ses propres fichiers. La matrice d'accès est appliquée côté interface et côté API, pas seulement affichée.",
+      title: "Accès réels, par direction",
+      body: "Un mot de passe par direction, mots de passe scrypt, session signée par le serveur : impossible de se faire passer pour une autre BU.",
     },
     {
       iconName: "check",
@@ -592,9 +594,9 @@ const notes = [];
       body: "Articles copiés mot à mot, références complètes, URL jamais inventée : « N/A » si l'information manque.",
     },
     {
-      iconName: "calendar",
-      title: "Jalons & fraîcheur",
-      body: "Assignée le, validée le, rejetée le, en attente depuis N jours, dernière mise à jour et date d'application de l'outil.",
+      iconName: "clock",
+      title: "Historique SCD type 2",
+      body: "Chaque enregistrement fige la version précédente et alimente un journal lisible : qui, quoi, quand, champs modifiés.",
     },
   ];
 
@@ -683,10 +685,10 @@ const notes = [];
   titles.push("04 — Garanties");
   notes.push([
     "Une veille réglementaire n'a de valeur que si elle est défendable. Voici les quatre garanties.",
-    "Premièrement l'historique : on ne remplace pas une donnée, on la fige. Une fiche modifiée trois fois reste consultable dans ses trois états, avec l'auteur, la date et le détail des champs modifiés.",
-    "Deuxièmement le cloisonnement : contrôle réel, dans l'interface comme dans l'API.",
-    "Troisièmement la fidélité : l'IA recopie les articles mot à mot et ne construit jamais une référence. Si l'information n'est pas dans le document, la fiche affiche « N/A » et le juridique corrige.",
-    "Quatrièmement la fraîcheur : on sait toujours de quand datent les données et de quand date la version de l'outil affichée.",
+    "D'abord, un scan ne se perd jamais. L'IA coûte des tokens : tant qu'un document n'est pas enregistré, il reste dans la liste des documents scannés. Changer d'onglet, quitter la page, revenir le lendemain, déposer un autre JO : rien ne s'efface. Nous avons d'ailleurs trouvé la cause d'une perte de scans : l'enregistrement dans le navigateur échouait en silence quand le document dépassait la capacité du stockage.",
+    "Ensuite les accès : un mot de passe par direction, haché, et une session signée par le serveur. Concrètement, un appel HTTP qui prétend être la Direction Juridique sans session est rejeté — c'est vérifié.",
+    "Puis la fidélité : l'IA recopie les articles mot à mot et ne construit jamais une référence. Si l'information n'est pas dans le document, la fiche affiche N/A et le juridique corrige.",
+    "Enfin l'historique : on ne remplace pas une donnée, on la fige. Une fiche modifiée trois fois reste consultable dans ses trois états, avec l'auteur, la date et le détail des champs modifiés.",
   ]);
   slides.push({ slide, transition: transition("morph") });
 }
@@ -723,7 +725,7 @@ const notes = [];
   const ready = [
     "7 tables + 4 listes de choix décrites et mappées dans le code",
     "Une Business Unit par direction, 2 rôles de sécurité (BU / Centrale)",
-    "Un seul point à basculer : l'identité, par Entra ID et Web Roles",
+    "Deux points à basculer : lireSession (serveur) et la pastille d’identité",
     "Journal d'audit lisible dans Power Pages, versions en tables dédiées",
     "Logo, couleurs et en-têtes déjà alignés sur le portail",
   ];
@@ -757,8 +759,8 @@ const notes = [];
   });
   const roadmap = [
     "Recréer le schéma Dataverse depuis le mapping déjà documenté",
-    "Brancher l'API sur Dataverse et activer l'auditing natif",
-    "Piloter la recette avec les directions, puis basculer l'identité",
+    "Brancher l'API sur Dataverse et activer l’auditing natif",
+    "Basculer l'identité sur Entra ID avec les directions",
   ];
   roadmap.forEach((item, i) => {
     const y = 226 + i * 66;
@@ -804,7 +806,7 @@ const notes = [];
       {
         runs: [
           t("Merci  —  ", { sz: 11, b: true, color: C.blue }),
-          t("démo live : Pilotage → Nouvelle alerte → Validation → Approbation → Historique", {
+          t("démo live : Connexion → Assignation → Approbation → Vue immersive → Historique", {
             sz: 10,
             color: C.body,
           }),
@@ -834,10 +836,11 @@ const notes = [];
   titles.push("05 — Perspectives");
   notes.push([
     "Dernière slide : pourquoi ce prototype n'est pas un prototype jetable.",
-    "Le schéma Dataverse est déjà écrit dans le code, avec les listes de choix, les relations et les rôles de sécurité. Le seul point à basculer est l'identité : le sélecteur de direction sera remplacé par Entra ID et les Web Roles.",
-    "Concrètement, la suite est cadrée : recréer le schéma, brancher l'API, activer l'auditing natif, puis piloter la recette avec les directions.",
-    "Je propose de terminer par la démo : le même parcours que la présentation, sur des données réelles.",
-    "Le code et la documentation sont sur le dépôt indiqué en bas de slide — je vous invite à les parcourir.",
+    "Le schéma Dataverse est déjà écrit dans le code, avec les listes de choix, les relations et les rôles de sécurité.",
+    "Pour l'identité, la bascule est courte et bien délimitée : deux points seulement dans le code, lireSession côté serveur et la pastille d'identité côté interface. Tout le reste — les droits, les filtres par direction, les refus 403 — est déjà dans la forme attendue par Power Pages.",
+    "Concrètement, la suite est cadrée : recréer le schéma, brancher l'API, activer l'auditing natif, puis basculer l'authentification sur Entra ID avec les directions.",
+    "Je propose de terminer par la démo : connexion, assignation d'un document, approbation, puis la vue immersive du texte.",
+    "Le code et la documentation sont sur le dépôt indiqué en bas de slide.",
   ]);
   slides.push({ slide, transition: transition("reveal") });
 }

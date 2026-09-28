@@ -147,6 +147,13 @@ export function PastilleSession() {
       >
         Sortir
       </button>
+      <a
+        href="/compte"
+        className="shrink-0 rounded-full bg-white/15 px-2.5 py-1 font-semibold text-white transition-colors hover:bg-white/30"
+        title="Identité et mot de passe"
+      >
+        Compte
+      </a>
     </div>
   );
 }

@@ -89,6 +89,10 @@ npm run dev            # http://localhost:3000 → redirige vers /dashboard
 | `npm run db:generate` / `db:push` / `db:migrate` / `db:studio` | Client Prisma / schéma / migrations / explorateur |
 | `npm run pptx` | Régénère `AGL-JuriCompliance-Presentation.pptx` (voir § Support) |
 | `npm run acces:init` | Crée les accès par direction + les comptes nominatifs (voir § Accès par direction) |
+| `npm run acces:verifier` | Diagnostic de l'accès avant/après déploiement (rien ne sort en clair) |
+| `npm run acces:reinitialiser -- <email>` | Réinitialise un mot de passe (affiché une seule fois) |
+| `npm run acces:desactiver -- <email>` / `acces:activer` | Révoque / rétablit un accès |
+| `npm run acces:exporter` | JSON des accès à coller dans `JURISCAN_COMPTES` (Vercel) |
 
 **Accès obligatoire** : sans session, l'application renvoie vers `/connexion`.
 Lancez `npm run acces:init` au premier démarrage (voir § Accès par direction).
@@ -108,7 +112,12 @@ src/
     page.tsx                    # racine → redirect /dashboard
     layout.tsx                  # layout + métadonnées
     globals.css                 # Tailwind v4, @theme brand-blue/brand-gold
-    api/
+  connexion/page.tsx            # écran de connexion (compte nominatif OU accès de direction)
+  compte/page.tsx               # mon compte : identité + changement de mot de passe
+  api/
+      connexion/route.ts          # POST connexion (cookie signé) · DELETE déconnexion
+      session/route.ts            # GET « qui suis-je ? » (déduit du cookie, jamais du client)
+      mot-de-passe/route.ts       # changement de mot de passe par l'utilisateur
       analyse/route.ts          # POST extraction IA (Gemini / simulation)
       veille/route.ts           # POST création (centrale) · GET liste
       veille/[id]/route.ts      # GET fiche · PUT édition (groupes) · PATCH workflow/pilotage
@@ -163,6 +172,9 @@ scripts/build-info.mjs          # horodate chaque build/dev → src/generated/bu
 scripts/build-presentation.mjs  # génère la présentation (6 slides, icônes, transitions,
                                 # notes de l'orateur) → AGL-JuriCompliance-Presentation.pptx
 scripts/init-comptes.mjs        # npm run acces:init : accès par direction + comptes
+scripts/acces-admin.mjs         # administration IT : liste, réinit., activation, export
+scripts/verifier-acces.mjs      # npm run acces:verifier : diagnostic d'accès
+docs/deploiement-vercel.md      # déploiement Vercel : SESSION_SECRET + JURISCAN_COMPTES
 scripts/lib/                     # modules de génération OOXML (zip, formes/icônes, paquet)
 ```
 
@@ -240,6 +252,24 @@ impose le même mot de passe (recette uniquement).
   `/connexion`), chaque route métier par `sessionOuverte(req)` (401).
 - Réponse de connexion volontairement neutre (« identifiants invalides ») et
   hachage factice quand le compte est inconnu : impossible d'énumérer les comptes.
+
+### Changer / révoquer un accès
+
+- **Par la personne** : écran `/compte` (bouton « Compte » en haut de l'en-tête). Le
+  mot de passe **actuel** est exigé, le nouveau est réécrit dans la source des
+  identifiants (base ou `acces.local.json`) et la session cesse d'être « provisoire ».
+  12 caractères minimum, 3 types différents, différent de l'ancien.
+- **Par l'administrateur IT** (mot de passe perdu, accès à révoquer) :
+  `npm run acces:reinitialiser -- <email>` · `npm run acces:desactiver -- <email>` ·
+  `npm run acces:activer -- <email>` · `npm run acces:liste`.
+  Un accès révoqué ne supprime rien : ses modifications restent dans le journal SCD2,
+  rattachées à son email.
+- **Sur Vercel**, la source est la variable `JURISCAN_COMPTES` (non modifiable depuis
+  l'application : le changement est refusé avec un message explicite) → l'IT régénère
+  l'export et redéploie. Voir `docs/deploiement-vercel.md`.
+- **Avant / après déploiement** : `npm run acces:verifier` (contrôle la configuration
+  d'accès et signale les mots de passe encore provisoires, sans jamais afficher de
+  secret).
 
 ### Où vivent les identifiants
 

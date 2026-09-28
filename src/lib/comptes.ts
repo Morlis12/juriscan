@@ -25,7 +25,7 @@
  * silencieux — c'est la garantie qu'il n'existe pas d'accès ouvert.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { join } from "node:path";
 import { DEPARTEMENT_CODES, type DepartementCode } from "@/domain/veille";
@@ -178,6 +178,106 @@ export async function chargerComptes(): Promise<{
 /** Vide le cache (tests, changement de configuration). */
 export function viderCacheComptes(): void {
   cache = null;
+}
+
+export interface ResultatEcriture {
+  ok: boolean;
+  /** Origine qui refuse l'écriture (ex. variable d'environnement). */
+  motif?: "ENVIRONNEMENT" | "INTROUVABLE" | "ERREUR";
+}
+
+/**
+ * Réécrit le condensat d'un mot de passe **dans la source des identifiants**.
+ * C'est ce qui permet à un utilisateur de changer son mot de passe lui-même,
+ * sans repasser par un administrateur.
+ * - base : mise à jour de la ligne `User` ;
+ * - fichier : réécriture de `acces.local.json` (mode démo / réceptions) ;
+ * - environnement : écriture impossible (Vercel) → l'appelant doit l'expliquer
+ *   et renvoyer vers l'administrateur.
+ */
+export async function mettreAJourMotDePasse(
+  email: string,
+  motDePasseHash: string,
+): Promise<ResultatEcriture> {
+  const cible = email.trim().toLowerCase();
+  const { comptes, source } = await chargerComptes();
+  if (source === "aucun" || !comptes.some((c) => c.email === cible)) {
+    return { ok: false, motif: "INTROUVABLE" };
+  }
+  if (source === "environnement") {
+    return { ok: false, motif: "ENVIRONNEMENT" };
+  }
+  if (source === "base") {
+    try {
+      await prisma.user.update({
+        where: { email: cible },
+        data: { motDePasseHash, motDePasseProvisoire: false, dernierAcces: new Date() },
+      });
+      viderCacheComptes();
+      return { ok: true };
+    } catch {
+      return { ok: false, motif: "ERREUR" };
+    }
+  }
+  try {
+    const chemin = join(RACINE, FICHIER);
+    const brut = JSON.parse(readFileSync(chemin, "utf8")) as FichierAcces;
+    const liste = Array.isArray(brut.comptes) ? brut.comptes : [];
+    let trouve = false;
+    for (const c of liste as Record<string, unknown>[]) {
+      if (typeof c.email === "string" && c.email.toLowerCase() === cible) {
+        c.motDePasseHash = motDePasseHash;
+        c.provisoire = false;
+        trouve = true;
+      }
+    }
+    if (!trouve) return { ok: false, motif: "INTROUVABLE" };
+    writeFileSync(chemin, `${JSON.stringify(brut, null, 2)}\n`, "utf8");
+    viderCacheComptes();
+    return { ok: true };
+  } catch {
+    return { ok: false, motif: "ERREUR" };
+  }
+}
+
+/**
+ * Active / désactive un compte (retrait d'accès sans suppression de l'historique
+ * de ses modifications, qui reste rattaché à son email dans le journal SCD2).
+ */
+export async function definirActif(
+  email: string,
+  actif: boolean,
+): Promise<ResultatEcriture> {
+  const cible = email.trim().toLowerCase();
+  const { source } = await chargerComptes();
+  if (source === "environnement") return { ok: false, motif: "ENVIRONNEMENT" };
+  if (source === "base") {
+    try {
+      await prisma.user.update({ where: { email: cible }, data: { actif } });
+      viderCacheComptes();
+      return { ok: true };
+    } catch {
+      return { ok: false, motif: "ERREUR" };
+    }
+  }
+  try {
+    const chemin = join(RACINE, FICHIER);
+    const brut = JSON.parse(readFileSync(chemin, "utf8")) as FichierAcces;
+    const liste = Array.isArray(brut.comptes) ? brut.comptes : [];
+    let trouve = false;
+    for (const c of liste as Record<string, unknown>[]) {
+      if (typeof c.email === "string" && c.email.toLowerCase() === cible) {
+        c.actif = actif;
+        trouve = true;
+      }
+    }
+    if (!trouve) return { ok: false, motif: "INTROUVABLE" };
+    writeFileSync(chemin, `${JSON.stringify(brut, null, 2)}\n`, "utf8");
+    viderCacheComptes();
+    return { ok: true };
+  } catch {
+    return { ok: false, motif: "ERREUR" };
+  }
 }
 
 export interface ResultatConnexion {
