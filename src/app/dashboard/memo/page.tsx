@@ -4,10 +4,10 @@ import { SelecteurBUConnectee } from "@/components/ContexteBU";
 
 /**
  * AGL JuriCompliance — Mémo d'utilisation (guide complet, langage utilisateur).
- * Couvre toutes les fonctions : nouvelle alerte multi-actes, reprise du
- * travail en cours, indicateurs, workflow, droits par BU, pertinence transit,
+ * Couvre toutes les fonctions : assignation multi-actes, documents multiples,
+ * reprise du travail en cours, indicateurs, workflow, droits par BU, pertinence transit,
  * dates, historique, approbations et rejets.
- * Accessible via l'icône « ⓘ Mémo » de chaque en-tête.
+ * Accessible via le bouton « ⓘ Mémo » de la barre d'en-tête.
  */
 
 const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
@@ -16,9 +16,10 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
     contenu: (
       <ul className="list-disc space-y-1 pl-5">
         <li>
-          Déposez un PDF ou une image (glisser-déposer ou parcours), ou utilisez
-          les boutons « Tester avec l&apos;exemple » (JO n°53 intégré), puis
-          « Lancer l&apos;Analyse IA ». La saisie manuelle reste possible.
+          Déposez <strong>un ou plusieurs PDF / images</strong> (glisser-déposer ou
+          parcours, sélection multiple), ou utilisez les boutons « Tester avec
+          l&apos;exemple » (JO n°53 intégré), puis « Scanner ». La saisie manuelle
+          reste possible.
         </li>
         <li>
           <strong>1 document = N actes</strong> : un Journal Officiel contient
@@ -40,22 +41,41 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
     ),
   },
   {
-    titre: "Reprendre où vous étiez (travail conservé)",
+    titre: "Reprendre où vous étiez (un scan IA coûte des tokens)",
     contenu: (
       <ul className="list-disc space-y-1 pl-5">
         <li>
-          Chaque onglet (<strong>Automatique / Manuel</strong>) garde son
-          travail en cours : basculer d&apos;onglet ou quitter la page ne fait
-          plus rien perdre — tout est retrouvé au retour.
+          <strong>Rien ne se perd.</strong> Chaque document scanné reste dans la
+          liste <strong>« Documents scannés · conservés »</strong> tant qu&apos;il
+          n&apos;est pas enregistré : vous pouvez changer d&apos;onglet, quitter la
+          page, revenir le lendemain, déposer un nouveau document… le scan est
+          conservé à chaque modification.
         </li>
         <li>
-          Le document lui-même ne peut pas être conservé : rechargez-le pour
-          relancer une analyse (vos actes et BU cochées restent modifiables et
-          enregistrables sans lui).
+          À votre retour, un bandeau <strong>« Reprise »</strong> vous annonce le
+          nombre de documents retrouvés et combien d&apos;actes restent sans
+          direction cochée. Chaque document porte un badge{" "}
+          <strong>« X à assigner »</strong> ou <strong>« prêt »</strong>.
         </li>
         <li>
-          Après un enregistrement complet, le brouillon est vidé pour éviter
-          tout doublon en revenant sur la page.
+          <strong>Plusieurs documents d&apos;un coup</strong> : déposez 3 PDF
+          ensemble, ils sont analysés l&apos;un après l&apos;autre (chaque résultat
+          est conservé dès qu&apos;il arrive — un échec n&apos;annule pas les autres).
+        </li>
+        <li>
+          Seul le document que vous enregistrez disparaît de la liste. Si d&apos;autres
+          restent en attente, l&apos;écran vous y reste : rien n&apos;est perdu, vous
+          enchaînez.
+        </li>
+        <li>
+          Le <strong>fichier</strong> seul n&apos;est pas conservé (il pèse trop pour
+          le navigateur) : pour relancer une analyse sur le même document, il faut
+          le re-déposer — vos actes et vos assignations restent intacts entre-temps.
+        </li>
+        <li>
+          Si le navigateur refuse de tout stocker (navigation privée stricte), un
+          bandeau orange vous prévient : enregistrez alors vos assignations avant
+          de quitter la page.
         </li>
       </ul>
     ),

@@ -19,9 +19,13 @@ voir `src/lib/dataverse/tables.ts`).
   extraction (IA, clé requise — pas de mode démo) ou saisie manuelle. « 1 document »
   = « N textes » (un JO = des dizaines d'actes, jamais fusionnés) : navigation
   « Acte X / N », assignation multi-BU **par acte**, enregistrement en N alertes
-  (`<racine>-01`, `-02`, … ; actes sans BU ignorés avec motif). Travail conservé :
-  chaque onglet (auto/manuel) garde son brouillon (localStorage) — basculer
-  d'onglet ou quitter la page ne fait plus rien perdre. PDF longs découpés
+  (`<racine>-01`, `-02`, … ; actes sans BU ignorés avec motif). **Dépôt multiple** :
+  N PDF/images d'un coup, analysés **séquentiellement** (chaque résultat conservé dès
+  qu'il arrive, un échec n'annule pas les autres). **Travail jamais perdu** : un
+  document scanné reste dans la liste « Documents scannés · conservés » tant qu'il
+  n'est pas enregistré — changer d'onglet, quitter la page, revenir le lendemain ou
+  déposer un nouveau document ne détruit rien (IndexedDB, repli `localStorage`
+  avec version allégée si quota atteint ; voir § Conservation du scan). PDF longs découpés
   en tranches de 5 pages (+1 de chevauchement, fusion/dédoublonnage), sortie JSON
   structurée (schéma zod). Fidélité exigée : articles copiés mot à mot,
   transcription brute complète (`contenu`), références jamais tronquées, rien
@@ -129,6 +133,8 @@ src/
     historique.ts               # versionnerFiche/Action + journaliser (transactions SCD2)
     veille-save.ts              # création Alerte + N fiches + journal CREATION
     dataverse/tables.ts         # MAPPING DATAVERSE (7 tables, OptionSets, relations, rôles)
+    brouillon-scan.ts           # CONSERVATION DU SCAN (IndexedDB + repli localStorage,
+                                # version allégée si quota, migration) — pur navigateur
 prisma/schema.prisma            # 7 modèles : User, VeilleAlerte, VeilleFiche (+SCD2),
                                 # VeilleAction (+SCD2), VeilleFicheVersion,
                                 # VeilleActionVersion, VeilleJournal
@@ -140,6 +146,34 @@ scripts/build-presentation.mjs  # génère la présentation (6 slides, icônes, 
                                 # notes de l'orateur) → AGL-JuriCompliance-Presentation.pptx
 scripts/lib/                     #/modules de génération OOXML (zip, formes/icônes, paquet)
 ```
+
+## Conservation du scan — rien ne se paie deux fois
+
+Un scan IA consomme des tokens : l'écran **Assignation** (`/dashboard/nouvelle-alerte`)
+ne perd donc jamais un document scanné. Module `src/lib/brouillon-scan.ts` (pur
+navigateur, même code transposable côté portail) :
+
+- **Un lot par document.** `lots[]` (onglet Auto) + saisie clavier (onglet Manuel) ;
+  chaque lot porte son nom de fichier, son horodatage, ses actes, sa position et son
+  état (`X à assigner` / `prêt`). Un lot ne disparaît **qu'après un enregistrement
+  réussi** ou une suppression explicite (confirmation) — jamais automatiquement.
+- **Écriture à chaque modification**, en IndexedDB (base `juriscan-juricompliance`,
+  magasin `brouillons`, clé `assignation`) : le quota de `localStorage` (~5 Mo) est
+  insuffisant pour un JO réel (des dizaines d'actes × transcription brute) et
+  l'échec y était **silencieux** — c'est ce qui faisait disparaître les scans.
+- **Trois degrades, jamais un silence** : IndexedDB → `localStorage` complet →
+  `localStorage` allégé (transcriptions tronquées) → échec explicite affiché en
+  bandeau orange. Le mirror `localStorage` sert aussi de filet si la base est vidée.
+- **Reprise visible** : bandeau « Reprise : N document(s) vous attendent » au retour,
+  avec le nombre d'actes encore sans direction.
+- **Enregistrement partiel** : seul le lot enregistré est retiré ; s'il en reste
+  d'autres, l'écran ne redirige pas et l'utilisateur enchaîne.
+- `beforeunload` : un avertissement de fermeture apparaît tant qu'un acte reste sans
+  direction (garde-fou, la conservation est déjà assurée).
+- **Migration** : l'ancien brouillon mono-document (`juriscan-nouvelle-alerte-brouillon`)
+  est converti en lot au premier chargement — le travail en cours n'est pas perdu.
+- Seul le **fichier binaire** n'est pas conservé (trop lourd) : relancer une analyse
+  sur le même document suppose de le re-déposer, actes et assignations restent intacts.
 
 ## Accès — cloisonnement strict par BU
 

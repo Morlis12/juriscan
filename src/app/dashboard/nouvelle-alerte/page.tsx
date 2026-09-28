@@ -15,61 +15,17 @@ import { peutCreerAlerte } from "@/domain/acces";
 import { SelecteurBUConnectee, entetesAuteur, useBuConnectee } from "@/components/ContexteBU";
 import { LogoAGL } from "@/components/LogoAGL";
 import { NavOnglets } from "@/components/NavOnglets";
-
-type ModeSaisie = "auto" | "manuel";
-
-/** Clé de persistance du travail en cours (onglets auto/manuel). */
-const CLE_BROUILLON_NA = "juriscan-nouvelle-alerte-brouillon";
-
-/** Brouillon d'un onglet : actes, position, source, fichier d'origine. */
-interface BrouillonNA {
-  actes: ActeAnalyse[] | null;
-  indexActe: number;
-  meta: ApiAnalyseMeta | null;
-  source: "gemini" | "simulation" | null;
-  fileName: string | null;
-}
-
-const brouillonVide = (): BrouillonNA => ({
-  actes: null,
-  indexActe: 0,
-  meta: null,
-  source: null,
-  fileName: null,
-});
-
-/** Relit le travail en cours (un onglet ne perd plus rien en revenant). */
-function chargerBrouillons(): {
-  mode: ModeSaisie;
-  auto: BrouillonNA;
-  manuel: BrouillonNA;
-} {
-  const init = { mode: "auto" as ModeSaisie, auto: brouillonVide(), manuel: brouillonVide() };
-  try {
-    if (typeof window === "undefined") return init;
-    const brut = window.localStorage.getItem(CLE_BROUILLON_NA);
-    if (!brut) return init;
-    const p = JSON.parse(brut) as Partial<Record<ModeSaisie, Partial<BrouillonNA>>> & {
-      mode?: unknown;
-    };
-    for (const m of ["auto", "manuel"] as ModeSaisie[]) {
-      const b = p[m];
-      if (b && Array.isArray(b.actes)) {
-        init[m] = {
-          actes: b.actes as ActeAnalyse[],
-          indexActe: typeof b.indexActe === "number" ? b.indexActe : 0,
-          meta: (b.meta as ApiAnalyseMeta | null) ?? null,
-          source: b.source === "gemini" || b.source === "simulation" ? b.source : null,
-          fileName: typeof b.fileName === "string" ? b.fileName : null,
-        };
-      }
-    }
-    if (p.mode === "auto" || p.mode === "manuel") init.mode = p.mode;
-  } catch {
-    /* stockage indisponible ou corrompu : on repart de zéro */
-  }
-  return init;
-}
+import {
+  actesSansBU,
+  chargerBrouillonScan,
+  etatVide,
+  nouveauIdLot,
+  sauvegarderBrouillonScan,
+  viderBrouillonScan,
+  type BrouillonScan,
+  type LotScan,
+  type ModeSaisie,
+} from "@/lib/brouillon-scan";
 
 /** Un acte du tableau `{ actes }` renvoyé par POST /api/analyse (noms existants). */
 interface ApiAnalyseActe {
@@ -139,55 +95,75 @@ export default function NouvelleAlertePage() {
   const { bu: buConnectee, email: emailConnecte } = useBuConnectee();
   const inputRef = useRef<HTMLInputElement>(null);
   const [saving, setSaving] = useState(false);
-  const [file, setFile] = useState<File | null>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [loading, setLoading] = useState(false);
   const [erreur, setErreur] = useState<string | null>(null);
-  // Travail en cours conservé : chaque onglet (auto/manuel) garde son brouillon
-  // (actes, position, source, fichier) dans localStorage — basculer d'onglet ou
-  // quitter la page ne fait plus rien perdre, on reprend où on en était.
-  const [mode, setMode] = useState<ModeSaisie>("auto");
-  /** Analyse partielle (tranches/objets perdus) : affiché en ambre, les actes restent. */
-  const [avertissement, setAvertissement] = useState<string | null>(null);
+  /**
+   * Travail en cours — JAMAIS perdu : onglet Auto = une liste de lots (un par
+   * document déposé et scanné), onglet Manuel = saisie clavier. Tout est
+   * persisté (IndexedDB) à chaque modification : changer d'onglet, quitter la
+   * page, revenir le lendemain, déposer un nouveau document… rien ne s'efface.
+   * Un lot ne disparaît qu'après un enregistrement réussi ou une suppression
+   * demandée — un scan IA coûte des tokens, il est hors de question de le
+   * perdre.
+   */
+  const [etat, setEtat] = useState<BrouillonScan>(etatVide);
+  /** File d'attente des documents à analyser (les fichiers, eux, ne sont pas persistés). */
+  const [aAnalyser, setAAnalyser] = useState<File[]>([]);
+  /** Analyse en cours : index/total/nom pour afficher la progression. */
+  const [progression, setProgression] = useState<{ position: number; total: number; nom: string } | null>(null);
+  const [erreurFichier, setErreurFichier] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [brouillons, setBrouillons] = useState<Record<ModeSaisie, BrouillonNA>>(
-    () => ({ auto: brouillonVide(), manuel: brouillonVide() }),
-  );
-  // Persiste après restauration uniquement (sinon l'état vide initial écraserait
-  // le brouillon enregistré avant sa relecture).
+  /** Conservation dégradée (quota navigateur) : on le dit, on ne le cache pas. */
+  const [infoStockage, setInfoStockage] = useState<string | null>(null);
+  const [reprise, setReprise] = useState<{ nb: number; sansBU: number } | null>(null);
+
+  const mode = etat.mode;
+  const loading = progression !== null;
+  const lot = etat.lots.find((l) => l.id === etat.lotActifId) ?? null;
+  const avertissement = lot?.avertissement ?? null;
+
+  // Restauration au montage, puis persistance de chaque modification.
   const restaure = useRef(false);
   useEffect(() => {
     const raf = requestAnimationFrame(() => {
-      const r = chargerBrouillons();
-      // Saisie manuelle retrouvée vide : un acte vierge prêt au clavier.
-      const manuel =
-        r.mode === "manuel" && !r.manuel.actes
-          ? { ...r.manuel, actes: numeroterActes([creerAlerteVierge()]) }
-          : r.manuel;
-      setBrouillons({ auto: r.auto, manuel });
-      setMode(r.mode);
-      restaure.current = true;
+      void (async () => {
+        const r = await chargerBrouillonScan();
+        // Saisie manuelle retrouvée vide : un acte vierge prêt au clavier.
+        const manuel =
+          r.etat.mode === "manuel" && !r.etat.manuel.actes
+            ? { ...r.etat.manuel, actes: numeroterActes([creerAlerteVierge()]) }
+            : r.etat.manuel;
+        const e: BrouillonScan = { ...r.etat, manuel };
+        setEtat(e);
+        // Bandeau de reprise : les scans retrouvés sont annoncés explicitement.
+        if (e.lots.length > 0) {
+          setReprise({
+            nb: e.lots.length,
+            sansBU: e.lots.reduce((s, l) => s + actesSansBU(l), 0),
+          });
+        }
+        restaure.current = true;
+      })();
     });
     return () => cancelAnimationFrame(raf);
   }, []);
+
   useEffect(() => {
     if (!restaure.current) return;
-    try {
-      localStorage.setItem(
-        CLE_BROUILLON_NA,
-        JSON.stringify({ mode, auto: brouillons.auto, manuel: brouillons.manuel }),
-      );
-    } catch {
-      /* stockage indisponible ou plein : la session continue en mémoire */
-    }
-  }, [mode, brouillons]);
+    const t = setTimeout(() => {
+      void sauvegarderBrouillonScan(etat).then((rapport) => {
+        setInfoStockage(rapport.avertissement);
+      });
+    }, 350);
+    return () => clearTimeout(t);
+  }, [etat]);
 
-  /** Brouillon de l'onglet affiché + dérivés (« Acte X / N », compteurs). */
-  const brouillon = brouillons[mode];
-  const actes = brouillon.actes;
-  const indexActe = brouillon.indexActe;
-  const meta = brouillon.meta;
-  const source = brouillon.source;
+  /* Onglet Auto : le lot affiché. Onglet Manuel : la saisie clavier. */
+  const actes: ActeAnalyse[] | null =
+    mode === "auto" ? lot?.actes ?? null : etat.manuel.actes;
+  const indexActe = mode === "auto" ? lot?.indexActe ?? 0 : etat.manuel.indexActe;
+  const meta = lot?.meta ?? null;
+  const source = lot?.source ?? null;
   const acte =
     actes && actes.length > 0 ? actes[Math.min(indexActe, actes.length - 1)] : null;
   const nbAvecBU = actes
@@ -196,48 +172,121 @@ export default function NouvelleAlertePage() {
   const nbFiches = actes
     ? actes.reduce((s, a) => s + a.departementsResponsables.length, 0)
     : 0;
+  const nbLotsRestants = etat.lots.filter((l) => l.id !== lot?.id && actesSansBU(l) > 0).length;
 
-  /** Patch du brouillon de l'onglet affiché (ou ciblé). */
-  function majBrouillon(patch: Partial<BrouillonNA>, cible: ModeSaisie = mode) {
-    setBrouillons((prev) => ({ ...prev, [cible]: { ...prev[cible], ...patch } }));
-  }
   type Maj<T> = T | ((prev: T) => T);
   function resoudre<T>(v: Maj<T>, prev: T): T {
     return typeof v === "function" ? (v as (p: T) => T)(prev) : v;
   }
+  /** Actes de l'onglet affiché (lot scanné en Auto, saisie clavier en Manuel). */
   function setActes(v: Maj<ActeAnalyse[] | null>) {
-    const cible = mode;
-    setBrouillons((prev) => ({
-      ...prev,
-      [cible]: { ...prev[cible], actes: resoudre(v, prev[cible].actes) },
-    }));
+    setEtat((prev) => {
+      if (prev.mode === "manuel") {
+        return { ...prev, manuel: { ...prev.manuel, actes: resoudre(v, prev.manuel.actes) } };
+      }
+      return {
+        ...prev,
+        lots: prev.lots.map((l) =>
+          l.id === prev.lotActifId ? { ...l, actes: resoudre(v, l.actes) ?? [] } : l
+        ),
+      };
+    });
   }
   function setIndexActe(v: Maj<number>) {
-    const cible = mode;
-    setBrouillons((prev) => ({
-      ...prev,
-      [cible]: { ...prev[cible], indexActe: resoudre(v, prev[cible].indexActe) },
-    }));
+    setEtat((prev) => {
+      if (prev.mode === "manuel") {
+        return { ...prev, manuel: { ...prev.manuel, indexActe: resoudre(v, prev.manuel.indexActe) } };
+      }
+      return {
+        ...prev,
+        lots: prev.lots.map((l) =>
+          l.id === prev.lotActifId ? { ...l, indexActe: resoudre(v, l.indexActe) } : l
+        ),
+      };
+    });
   }
-  function setMeta(v: Maj<ApiAnalyseMeta | null>) {
-    const cible = mode;
-    setBrouillons((prev) => ({
-      ...prev,
-      [cible]: { ...prev[cible], meta: resoudre(v, prev[cible].meta) },
-    }));
+  function setMode(m: ModeSaisie) {
+    setEtat((prev) => {
+      // Saisie libre jamais commencée : un acte vierge, prêt au clavier.
+      const manuel =
+        m === "manuel" && !prev.manuel.actes
+          ? { ...prev.manuel, actes: numeroterActes([creerAlerteVierge()]) }
+          : prev.manuel;
+      // Bascule Auto sans document scanné et des lots en attente : on ouvre le
+      // plus récent plutôt que d'afficher un écran vide.
+      const lotActifId =
+        m === "auto" && !prev.lotActifId && prev.lots.length > 0
+          ? prev.lots[prev.lots.length - 1].id
+          : prev.lotActifId;
+      return { ...prev, mode: m, manuel, lotActifId };
+    });
+    setErreur(null);
+    // Chaque onglet garde son travail : rien n'est effacé en basculant.
   }
-  function setSource(v: Maj<"gemini" | "simulation" | null>) {
-    const cible = mode;
-    setBrouillons((prev) => ({
-      ...prev,
-      [cible]: { ...prev[cible], source: resoudre(v, prev[cible].source) },
-    }));
+
+  /** Ouvre un lot scanné (sans jamais le supprimer). */
+  function ouvrirLot(id: string) {
+    setEtat((prev) => ({ ...prev, mode: "auto", lotActifId: id }));
+    setErreur(null);
+    setMessage(null);
   }
+  /** Suppression explicite d'un lot (donc d'un scan payé) : confirmation requise. */
+  function supprimerLot(id: string) {
+    const cible = etat.lots.find((l) => l.id === id);
+    if (!cible) return;
+    if (
+      !window.confirm(
+        `Supprimer définitivement « ${cible.fileName} » ?
+\n${cible.actes.length} acte(s) extrait(s) seront perdus. Cette action est irréversible.`
+      )
+    ) {
+      return;
+    }
+    setEtat((prev) => {
+      const lots = prev.lots.filter((l) => l.id !== id);
+      return {
+        ...prev,
+        lots,
+        lotActifId: prev.lotActifId === id ? lots[lots.length - 1]?.id ?? null : prev.lotActifId,
+      };
+    });
+  }
+  /** Suppression globale : ne concerne que les scans non enregistrés. */
+  async function toutSupprimer() {
+    if (!window.confirm("Effacer tous les documents scannés non enregistrés ? Cette action est irréversible.")) {
+      return;
+    }
+    setEtat((prev) => ({ ...prev, lots: [], lotActifId: null }));
+    await viderBrouillonScan();
+    setReprise(null);
+    setMessage(null);
+  }
+
+  /**
+   * Filet de sécurité : on prévient avant de quitter la page s'il reste des
+   * documents scannés non assignés. (Le travail est conservé dans le
+   * navigateur — ce n'est qu'une garde-fou contre une fermeture accidentelle.)
+   */
+  useEffect(() => {
+    if (!restaure.current || saving) return;
+    const enAttente =
+      etat.lots.some((l) => actesSansBU(l) > 0) ||
+      (etat.mode === "manuel" &&
+        (etat.manuel.actes?.length ?? 0) > 0 &&
+        etat.manuel.actes?.some((a) => a.departementsResponsables.length === 0));
+    if (!enAttente) return;
+    const surFermeture = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = "";
+    };
+    window.addEventListener("beforeunload", surFermeture);
+    return () => window.removeEventListener("beforeunload", surFermeture);
+  }, [etat, saving]);
 
   /** Aperçu du panneau « Texte extrait » pour l'acte affiché. */
   function apercuActe(a: ActeAnalyse): string {
     return [
-      `—— Analyse IA AGL JuriCompliance : ${file?.name ?? brouillon.fileName ?? "saisie manuelle"} ——`,
+      `—— Analyse IA AGL JuriCompliance : ${lot?.fileName ?? "saisie manuelle"} ——`,
       "",
       `Acte ${a.idActe + 1}/${actes?.length ?? 1} · ${a.numeroOrdre || "N° à attribuer"}`,
       `Nature déduite : ${a.natureTexte || "—"}`,
@@ -253,81 +302,130 @@ export default function NouvelleAlertePage() {
     ].join("\n");
   }
 
-  function resetActes() {
-    majBrouillon({ actes: null, indexActe: 0, meta: null, source: null, fileName: null });
-    setMessage(null);
-    setAvertissement(null);
-  }
-
-  function choisirMode(m: ModeSaisie) {
-    setMode(m);
-    setErreur(null);
-    // Chaque onglet garde son travail en cours : rien n'est effacé en basculant.
-    // Saisie libre jamais commencée : un seul acte vierge, prêt au clavier.
-    if (m === "manuel") {
-      setBrouillons((prev) =>
-        prev.manuel.actes
-          ? prev
-          : { ...prev, manuel: { ...prev.manuel, actes: numeroterActes([creerAlerteVierge()]) } },
-      );
+  /**
+   * Ajoute des documents à la file d'attente. NE SUPPRIME RIEN : les lots déjà
+   * scannés (et donc payés) restent intacts, y compris le lot affiché.
+   */
+  function ajouterFichiers(liste: (File | undefined)[]) {
+    const refus: string[] = [];
+    const acceptes: File[] = [];
+    for (const f of liste) {
+      if (!f) continue;
+      const ok =
+        f.type === "application/pdf" ||
+        f.type.startsWith("image/") ||
+        /\.(pdf|png|jpe?g|webp)$/i.test(f.name);
+      if (ok) acceptes.push(f);
+      else refus.push(f.name);
+    }
+    setErreurFichier(
+      refus.length > 0
+        ? `Format non pris en charge (ignorés) : ${refus.join(", ")} — PDF, PNG, JPG ou WEBP uniquement.`
+        : null,
+    );
+    if (acceptes.length > 0) {
+      setErreur(null);
+      setMessage(null);
+      setAAnalyser((prev) => [...prev, ...acceptes]);
     }
   }
 
-  function prendreFichier(f: File | undefined) {
-    setErreur(null);
-    resetActes();
-    if (!f) return;
-    const ok =
-      f.type === "application/pdf" ||
-      f.type.startsWith("image/") ||
-      /\.(pdf|png|jpe?g|webp)$/i.test(f.name);
-    if (!ok) {
-      setErreur("Format non pris en charge : déposez un PDF ou une image (PNG, JPG, WEBP).");
+  /** Fichiers de la session (non persistables) : permettent de relancer un scan. */
+  const fichiersEnMemoire = useRef(new Map<string, File>());
+
+  /** Relance l'analyse du document affiché si le fichier est encore en mémoire. */
+  function relancerLot() {
+    if (!lot) return;
+    const f = fichiersEnMemoire.current.get(lot.fileName);
+    if (!f) {
+      setErreur(
+        `« ${lot.fileName} » n'est plus disponible (page rechargée) : re-déposez-le ci-dessus pour relancer l'analyse. Vos actes et vos assignations actuelles sont conservés entre-temps.`
+      );
+      inputRef.current?.click();
       return;
     }
-    setFile(f);
-    resetActes();
-    // Nom conservé dans le brouillon : en revenant sans le fichier, on sait
-    // lequel recharger pour relancer l'analyse (les actes restent modifiables).
-    majBrouillon({ fileName: f.name });
+    void analyserFichiers([f]);
   }
 
   /** Charge un fichier d'exemple intégré au projet (JO n°53) pour tester l'analyse. */
   async function chargerExemple(kind: "pdf" | "image") {
     setErreur(null);
-    resetActes();
     try {
       const url = kind === "pdf" ? "/exemples/53.pdf" : "/exemples/53-image-test.png";
       const nom = kind === "pdf" ? "53.pdf" : "53-image-test.png";
       const reponse = await fetch(url);
       if (!reponse.ok) throw new Error("Exemple introuvable.");
       const blob = await reponse.blob();
-      prendreFichier(
-        new File([blob], nom, {
-          type: blob.type || (kind === "pdf" ? "application/pdf" : "image/png"),
-        }),
-      );
+      const fichier = new File([blob], nom, {
+        type: blob.type || (kind === "pdf" ? "application/pdf" : "image/png"),
+      });
+      setAAnalyser((prev) => [...prev, fichier]);
+      // Un exemple se lance immédiatement : c'est un raccourci de démonstration.
+      void analyserFichiers([fichier]);
     } catch (e) {
       setErreur(e instanceof Error ? e.message : "Impossible de charger l'exemple.");
     }
   }
 
-  async function lancerAnalyse() {
-    if (!file) {
-      setErreur("Déposez d'abord un PDF (ex. Journal Officiel CI du 9 juillet 2026) ou une image.");
+  /**
+   * Analyse un ou plusieurs documents, l'un après l'autre.
+   *
+   * Séquentiel et non parallèle, volontairement : chaque JO déclenche des
+   * tranches de pages en parallèle côté API (donc des tokens), l'enchaîner évite
+   * de déclencher des quotas d'API d'un coup et permet de voir où l'on en est.
+   * Chaque document réussi devient un lot indépendant : un échec n'annule pas
+   * les documents déjà analysés.
+   */
+  async function analyserFichiers(liste?: File[]) {
+    const aTraiter = liste ?? aAnalyser;
+    for (const f of aTraiter) fichiersEnMemoire.current.set(f.name, f);
+    if (aTraiter.length === 0) {
+      setErreur("Déposez d'abord un ou plusieurs PDF (ex. Journal Officiel de Côte d'Ivoire) ou images.");
       return;
     }
-    setLoading(true);
+    if (progression) return;
     setErreur(null);
-    resetActes();
+    setErreurFichier(null);
+    setMessage(null);
+    setReprise(null);
+    let reussis = 0;
+    let echecs = 0;
+    for (let i = 0; i < aTraiter.length; i++) {
+      const fichier = aTraiter[i];
+      setProgression({ position: i + 1, total: aTraiter.length, nom: fichier.name });
+      const lot = await analyserUnFichier(fichier);
+      if (!lot) {
+        echecs += 1;
+        continue;
+      }
+      reussis += 1;
+      // Nouveau lot ajouté ET rendu actif : on continue immédiatement sur le
+      // suivant document, la liste reste visible à gauche.
+      setEtat((prev) => ({ ...prev, lots: [...prev.lots, lot], lotActifId: lot.id }));
+    }
+    setProgression(null);
+    setAAnalyser([]);
+    if (echecs > 0) {
+      setErreur(
+        `${echecs} document(s) non analysé(s) — voir le message ci-dessus. Les ${reussis} autre(s) sont conservés : rien n'est perdu.`
+      );
+    } else if (reussis > 1) {
+      setMessage(
+        `✅ ${reussis} documents analysés en un seul passage. Assignez-les puis enregistrez chaque lot.`
+      );
+    }
+  }
+
+  /** Analyse un document et renvoie le lot correspondant (null en cas d'échec). */
+  async function analyserUnFichier(fichier: File): Promise<LotScan | null> {
     try {
       // Base64 navigateur → POST JSON /api/analyse (aucun binaire côté serveur Next).
-      const base64Data = await fichierVersBase64Pur(file);
-      const mimeType = file.type || "application/pdf";
+      const base64Data = await fichierVersBase64Pur(fichier);
+      const mimeType = fichier.type || "application/pdf";
       const reponse = await fetch("/api/analyse", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ base64Data, mimeType, fileName: file.name }),
+        body: JSON.stringify({ base64Data, mimeType, fileName: fichier.name }),
       });
       const payload = (await reponse.json()) as {
         success?: boolean;
@@ -338,8 +436,10 @@ export default function NouvelleAlertePage() {
         error?: string;
       };
       if (!reponse.ok || !payload.success || !payload.data || !Array.isArray(payload.data.actes)) {
-        setErreur(payload.error || "Échec de l'analyse IA.");
-        return;
+        setErreur(
+          `${fichier.name} : ${payload.error || "échec de l'analyse IA."}`
+        );
+        return null;
       }
       // Zéro mock : actes IA réels + base vierge ; la conformité part à 0 % côté BU.
       // Chaque acte garde ses 12 champs + pertinence ; la recommandation BU
@@ -387,18 +487,28 @@ export default function NouvelleAlertePage() {
         };
       });
       if (normalises.length === 0) {
-        setErreur("Aucun acte détecté dans ce document. Vérifiez le fichier ou saisissez manuellement.");
-        return;
+        setErreur(
+          `${fichier.name} : aucun acte détecté dans ce document. Vérifiez le fichier ou saisissez manuellement.`
+        );
+        return null;
       }
-      setActes(numeroterActes(normalises));
-      setIndexActe(0);
-      setMeta(payload.meta ?? null);
-      setAvertissement(payload.avertissement ?? null);
-      setSource(payload.source ?? "gemini");
+      return {
+        id: nouveauIdLot(),
+        fileName: fichier.name,
+        mimeType,
+        taille: fichier.size,
+        dateScan: new Date().toISOString(),
+        source: payload.source ?? "gemini",
+        meta: (payload.meta ?? null) as Record<string, number> | null,
+        avertissement: payload.avertissement ?? null,
+        actes: numeroterActes(normalises),
+        indexActe: 0,
+      };
     } catch (e) {
-      setErreur(e instanceof Error ? e.message : "Échec de l'analyse IA.");
-    } finally {
-      setLoading(false);
+      setErreur(
+        `${fichier.name} : ${e instanceof Error ? e.message : "échec de l'analyse IA."}`
+      );
+      return null;
     }
   }
 
@@ -442,13 +552,34 @@ export default function NouvelleAlertePage() {
       const { creees = [], ignorees = [] } = payload.data;
       if (ignorees.length > 0) {
         // Reste sur l'écran pour corriger : liste les actes ignorés et pourquoi.
+        // Le lot est conservé (rien n'est perdu), l'utilisateur peut rejouer
+        // l'enregistrement après correction.
         setMessage(
-          `✅ ${creees.length} texte(s) enregistré(s) (${creees.map((c) => c.numeroOrdre).join(", ")}). Ignorés : ${ignorees.join(" · ")}`,
+          `✅ ${creees.length} texte(s) enregistré(s) (${creees.map((c) => c.numeroOrdre).join(", ")}). Ignorés : ${ignorees.join(" · ")}`
         );
         return;
       }
-      // Lot entièrement enregistré : on vide le brouillon (anti-doublon au retour).
-      majBrouillon({ actes: null, indexActe: 0, meta: null, source: null, fileName: null });
+      // Enregistrement réussi : on ne retire QUE le lot concerné. Les autres
+      // documents scannés restent intacts — un scan payé ne disparaît jamais.
+      setEtat((prev) => {
+        if (prev.mode === "manuel") {
+          return { ...prev, manuel: { actes: null, indexActe: 0 } };
+        }
+        const reste = prev.lots.filter((l) => l.id !== prev.lotActifId);
+        return {
+          ...prev,
+          lots: reste,
+          lotActifId: reste[reste.length - 1]?.id ?? null,
+        };
+      });
+      setReprise(null);
+      if (nbLotsRestants > 0) {
+        // D'autres documents attendent : on reste, pas de redirection.
+        setMessage(
+          `✅ ${creees.length} texte(s) enregistré(s) (${creees.map((c) => c.numeroOrdre).join(", ")}). Il reste ${nbLotsRestants} document(s) scanné(s) à assigner : ils sont conservés, enchaînez quand vous voulez.`
+        );
+        return;
+      }
       // Redirection opérationnelle : les fiches rejoignent leurs BU.
       router.push("/dashboard");
     } catch (e) {
@@ -538,7 +669,7 @@ export default function NouvelleAlertePage() {
             type="button"
             role="tab"
             aria-selected={mode === "auto"}
-            onClick={() => choisirMode("auto")}
+            onClick={() => setMode("auto")}
             className={`rounded-xl border-2 px-5 py-3 text-sm font-bold shadow-sm transition-colors ${
               mode === "auto"
                 ? "border-brand-gold bg-brand-blue text-white"
@@ -551,7 +682,7 @@ export default function NouvelleAlertePage() {
             type="button"
             role="tab"
             aria-selected={mode === "manuel"}
-            onClick={() => choisirMode("manuel")}
+            onClick={() => setMode("manuel")}
             className={`rounded-xl border-2 px-5 py-3 text-sm font-bold shadow-sm transition-colors ${
               mode === "manuel"
                 ? "border-brand-gold bg-brand-blue text-white"
@@ -561,6 +692,46 @@ export default function NouvelleAlertePage() {
             ✍️ Saisie Manuelle Libre
           </button>
         </div>
+
+        {reprise && (
+          <div className="rounded-xl border-2 border-brand-gold bg-brand-gold/10 px-4 py-3">
+            <p className="text-sm font-bold text-brand-blue">
+              ♻️ Reprise : {reprise.nb} document(s) scanné(s) vous attendent
+            </p>
+            <p className="mt-1 text-xs text-brand-blue">
+              {reprise.sansBU > 0
+                ? `${reprise.sansBU} acte(s) restent sans direction assignée. Ils sont conservés : vous pouvez quitter cette page, changer d'onglet ou revenir plus tard, rien ne sera perdu.`
+                : "Toutes les directions sont cochées : vous pouvez enregistrer quand vous le souhaitez."}{" "}
+              Un document n&apos;est retiré de cette liste qu&apos;après un enregistrement
+              réussi.
+            </p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  const dernier = etat.lots[etat.lots.length - 1];
+                  if (dernier) ouvrirLot(dernier.id);
+                }}
+                className="rounded-full bg-brand-blue px-4 py-1.5 text-xs font-bold text-white shadow transition-colors hover:bg-brand-blue/90"
+              >
+                Reprendre l&apos;assignation →
+              </button>
+              <button
+                type="button"
+                onClick={() => void toutSupprimer()}
+                className="rounded-full border border-brand-blue/40 px-4 py-1.5 text-xs font-semibold text-brand-blue transition-colors hover:bg-brand-blue/10"
+              >
+                Tout supprimer
+              </button>
+            </div>
+          </div>
+        )}
+
+        {infoStockage && (
+          <p className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs font-medium text-amber-900">
+            ⚠ {infoStockage}
+          </p>
+        )}
 
         <div className="grid gap-6 lg:grid-cols-[minmax(0,5fr)_minmax(0,7fr)]">
         {/* Colonne gauche : dépôt + extraction */}
@@ -585,16 +756,106 @@ export default function NouvelleAlertePage() {
               </ol>
             </div>
           ) : (
+          <>
+          {etat.lots.length > 0 && (
+            <div className="rounded-xl border border-brand-gold/40 bg-white p-5 shadow-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold text-brand-blue">
+                    Documents scannés · conservés
+                  </h2>
+                  <p className="mt-1 text-xs text-slate-500">
+                    Chaque document scanné reste ici tant qu&apos;il n&apos;est pas
+                    enregistré. Vous pouvez en deposit d&apos;autres, revenir plus tard,
+                    ou passer sur l&apos;onglet manuel.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void toutSupprimer()}
+                  className="shrink-0 rounded-full border border-slate-300 px-3 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-red-400 hover:text-red-600"
+                >
+                  Tout supprimer
+                </button>
+              </div>
+              <ul className="mt-3 space-y-2">
+                {etat.lots.map((l) => {
+                  const sansBU = actesSansBU(l);
+                  const actif = l.id === etat.lotActifId;
+                  return (
+                    <li
+                      key={l.id}
+                      className={`rounded-lg border px-3 py-2 ${
+                        actif
+                          ? "border-brand-blue bg-brand-blue/5"
+                          : "border-slate-200 bg-white hover:border-brand-blue/40"
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-semibold text-brand-blue">
+                            {l.fileName}
+                          </p>
+                          <p className="text-[11px] text-slate-500">
+                            {l.actes.length} acte(s) ·{" "}
+                            {l.actes.reduce(
+                              (s2, a) => s2 + a.departementsResponsables.length,
+                              0,
+                            )}{" "}
+                            assignation(s) · scanné le{" "}
+                            {new Date(l.dateScan).toLocaleString("fr-FR", {
+                              dateStyle: "short",
+                              timeStyle: "short",
+                            })}
+                          </p>
+                        </div>
+                        <span
+                          className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold ${
+                            sansBU > 0
+                              ? "bg-amber-100 text-amber-800"
+                              : "bg-emerald-100 text-emerald-800"
+                          }`}
+                        >
+                          {sansBU > 0 ? `${sansBU} à assigner` : "prêt"}
+                        </span>
+                      </div>
+                      <div className="mt-2 flex gap-2">
+                        {!actif && (
+                          <button
+                            type="button"
+                            onClick={() => ouvrirLot(l.id)}
+                            className="rounded-full bg-brand-blue px-3 py-1 text-[11px] font-bold text-white transition-colors hover:bg-brand-blue/90"
+                          >
+                            Ouvrir
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => supprimerLot(l.id)}
+                          className="rounded-full border border-slate-300 px-3 py-1 text-[11px] font-semibold text-slate-600 transition-colors hover:border-red-400 hover:text-red-600"
+                        >
+                          Supprimer
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
-            <h2 className="text-base font-bold text-brand-blue">1 · Charger le document</h2>
+            <h2 className="text-base font-bold text-brand-blue">
+              1 · Charger {etat.lots.length > 1 ? "des documents" : "le document"}
+            </h2>
             <p className="mt-1 text-xs text-slate-500">
-              Glissez un PDF (ex. Journal Officiel de Côte d&apos;Ivoire du 9 juillet 2026) ou une image brute.
+              Glissez un ou plusieurs PDF (ex. Journal Officiel de Côte d&apos;Ivoire du
+              9 juillet 2026) ou des images brutes — ils sont analysés dans l&apos;ordre.
             </p>
 
             <div
               role="button"
               tabIndex={0}
-              aria-label="Zone de dépôt du document"
+              aria-label="Zone de dépôt des documents à analyser"
               onClick={() => inputRef.current?.click()}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === " ") inputRef.current?.click();
@@ -607,7 +868,7 @@ export default function NouvelleAlertePage() {
               onDrop={(e) => {
                 e.preventDefault();
                 setDragOver(false);
-                prendreFichier(e.dataTransfer.files?.[0]);
+                ajouterFichiers(Array.from(e.dataTransfer.files ?? []));
               }}
               className={`mt-4 flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed px-6 py-10 text-center transition-colors ${
                 dragOver
@@ -619,45 +880,70 @@ export default function NouvelleAlertePage() {
                 ⇪
               </span>
               <p className="mt-3 text-sm font-semibold text-brand-blue">
-                Glisser-déposer le PDF / l&apos;image ici
+                Glisser-déposer un ou plusieurs PDF / images
               </p>
-              <p className="mt-1 text-xs text-slate-500">ou cliquez pour parcourir — PDF, PNG, JPG, WEBP</p>
+              <p className="mt-1 text-xs text-slate-500">
+                ou cliquez pour parcourir — PDF, PNG, JPG, WEBP (sélection multiple)
+              </p>
               <input
                 ref={inputRef}
                 type="file"
                 accept={ACCEPT}
+                multiple
                 className="hidden"
-                onChange={(e) => prendreFichier(e.target.files?.[0])}
+                onChange={(e) => {
+                  ajouterFichiers(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
               />
             </div>
 
-            {file && (
-              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-slate-50 px-3 py-2 text-sm">
-                <div className="min-w-0">
-                  <p className="truncate font-semibold text-brand-blue">{file.name}</p>
-                  <p className="text-xs text-slate-500">
-                    {file.type || "document"} · {formatTaille(file.size)}
+            {aAnalyser.length > 0 && (
+              <div className="mt-3 rounded-lg border border-brand-blue/20 bg-brand-blue/5 px-3 py-2">
+                <div className="flex items-center justify-between gap-3">
+                  <p className="text-xs font-semibold text-brand-blue">
+                    {aAnalyser.length} document(s) prêt(s) à scanner
                   </p>
+                  <button
+                    type="button"
+                    onClick={() => setAAnalyser([])}
+                    className="shrink-0 rounded-full px-2 py-1 text-[11px] font-medium text-red-600 hover:bg-red-50"
+                  >
+                    Tout retirer
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setFile(null);
-                    majBrouillon({ fileName: null });
-                  }}
-                  className="shrink-0 rounded-full px-3 py-1 text-xs font-medium text-red-600 hover:bg-red-50"
-                >
-                  Retirer
-                </button>
+                <ul className="mt-2 space-y-1">
+                  {aAnalyser.map((f, i) => (
+                    <li
+                      key={`${f.name}-${f.size}-${i}`}
+                      className="flex items-center justify-between gap-2 rounded bg-white/70 px-2 py-1 text-[11px] text-slate-600"
+                    >
+                      <span className="truncate">
+                        {progression && progression.nom === f.name ? "⟳ " : ""}
+                        {f.name}
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        <span className="tabular-nums text-slate-400">{formatTaille(f.size)}</span>
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setAAnalyser((prev) => prev.filter((autre, j) => j !== i))
+                          }
+                          className="rounded px-1 font-medium text-red-600 hover:bg-red-50"
+                          aria-label={`Retirer ${f.name}`}
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
 
-            {!file && brouillon.fileName && (
-              <p className="mt-3 rounded-lg bg-brand-blue/5 px-3 py-2 text-xs text-brand-blue">
-                Document précédent :{" "}
-                <span className="font-semibold">{brouillon.fileName}</span> — rechargez-le
-                ci-dessus pour relancer l&apos;analyse. Vos actes et BU cochées sont
-                conservés, vous pouvez continuer et enregistrer.
+            {erreurFichier && (
+              <p className="mt-3 rounded-lg bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+                {erreurFichier}
               </p>
             )}
 
@@ -665,14 +951,35 @@ export default function NouvelleAlertePage() {
               <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs font-medium text-red-700">{erreur}</p>
             )}
 
+            {progression && (
+              <div className="mt-3 rounded-lg border border-brand-gold/60 bg-brand-gold/10 px-3 py-2 text-xs text-brand-blue">
+                <p className="font-semibold">
+                  Analyse {progression.position}/{progression.total} — {progression.nom}
+                </p>
+                <p className="mt-1">
+                  Document en cours de lecture. Le résultat est conservé dès la fin de
+                  cette analyse, même si vous quittez la page ensuite.
+                </p>
+              </div>
+            )}
+
             <button
               type="button"
-              onClick={lancerAnalyse}
-              disabled={!file || loading}
+              onClick={() => void analyserFichiers()}
+              disabled={aAnalyser.length === 0 || loading}
               className="mt-4 w-full rounded-xl bg-brand-blue px-5 py-3 text-sm font-bold text-white shadow transition-all hover:bg-brand-blue/90 disabled:cursor-not-allowed disabled:opacity-40"
             >
-              {loading ? "Analyse IA en cours…" : "Lancer l'Analyse IA AGL JuriCompliance"}
+              {progression
+                ? `Analyse en cours… ${progression.position}/${progression.total}`
+                : aAnalyser.length > 1
+                  ? `Scanner les ${aAnalyser.length} documents d'un coup`
+                  : "Lancer l'Analyse IA AGL JuriCompliance"}
             </button>
+            <p className="mt-2 text-[11px] text-slate-500">
+              Les documents sont analysés l&apos;un après l&apos;autre : plus lent, mais
+              chaque résultat est conservé dès qu&apos;il arrive — un échec
+              n&apos;annule pas les autres.
+            </p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <button
                 type="button"
@@ -703,6 +1010,7 @@ export default function NouvelleAlertePage() {
               extraites avant d&apos;assigner le texte aux BU concernées.
             </p>
           </div>
+          </>
           )}
 
           {mode === "auto" && (
@@ -960,7 +1268,7 @@ export default function NouvelleAlertePage() {
                 </button>
                 <button
                   type="button"
-                  onClick={lancerAnalyse}
+                  onClick={relancerLot}
                   disabled={loading}
                   className="rounded-xl border border-brand-blue px-5 py-2.5 text-sm font-semibold text-brand-blue transition-colors hover:bg-brand-blue hover:text-white disabled:opacity-40"
                 >
