@@ -56,11 +56,26 @@ if (avecBase) {
           : `manquantes : ${manquantes.join(", ")} → npm run db:push`,
       );
       const comptes = await prisma.user.count({ where: { motDePasseHash: { not: null } } });
-      ligne(
-        "Comptes en base",
-        comptes > 0 ? "ok" : "ko",
-        comptes > 0 ? `${comptes} compte(s)` : "aucun → npm run acces:init puis import",
-      );
+      if (comptes > 0) {
+        ligne("Comptes en base", "ok", `${comptes} compte(s)`);
+      } else {
+        // Base vide : l'application retombe sur le fichier serveur
+        // (même règle que chargerComptes) — pas bloquant en local.
+        let repli = 0;
+        try {
+          const brut = JSON.parse(readFileSync(join(RACINE, FICHIER), "utf8"));
+          if (Array.isArray(brut.comptes)) repli = brut.comptes.length;
+        } catch {
+          repli = 0;
+        }
+        ligne(
+          "Comptes en base",
+          repli > 0 ? "info" : "ko",
+          repli > 0
+            ? `aucun — repli fichier serveur (${repli} accès)`
+            : "aucun → npm run acces:init puis import",
+        );
+      }
     } finally {
       await prisma.$disconnect();
     }

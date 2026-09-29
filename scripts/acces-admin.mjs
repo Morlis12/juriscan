@@ -54,7 +54,8 @@ async function avecBaseSql(action) {
 /* ---------- Opérations ---------- */
 
 async function liste() {
-  const comptes = avecBase
+  let source = avecBase ? "base (User)" : "fichier acces.local.json";
+  let comptes = avecBase
     ? await avecBaseSql(async (prisma) =>
         prisma.user.findMany({
           where: { motDePasseHash: { not: null } },
@@ -63,11 +64,16 @@ async function liste() {
         })
       )
     : (lire()?.comptes ?? []);
+  // Base vide : même repli fichier que l'application (chargerComptes).
+  if (avecBase && comptes.length === 0) {
+    comptes = lire()?.comptes ?? [];
+    if (comptes.length > 0) source = "fichier acces.local.json (repli — base vide)";
+  }
   if (!comptes.length) {
     process.stdout.write("\nAucun compte. Lancez « npm run acces:init ».\n\n");
     return 1;
   }
-  process.stdout.write(`\nSource : ${avecBase ? "base (User)" : "fichier acces.local.json"}\n`);
+  process.stdout.write(`\nSource : ${source}\n`);
   const largeur = Math.max(...comptes.map((c) => (c.email ?? "").length));
   process.stdout.write(`${"IDENTIFIANT".padEnd(largeur + 2)}${"TYPE".padEnd(10)}${"BU".padEnd(16)}${"ÉTAT"}\n`);
   for (const c of comptes) {

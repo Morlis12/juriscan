@@ -19,6 +19,9 @@
 import { randomBytes } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { chargerEnvLocal } from "./lib/env-local.mjs";
+
+chargerEnvLocal();
 import { DEPARTEMENTS, DEPARTEMENT_CODES } from "../src/domain/veille.ts";
 import { hacherMotDePasse, motDePasseProvisoire } from "../src/lib/mots-de-passe.ts";
 
