@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import type { ConformiteStatut, DepartementCode, FluxStatut } from "@/domain/veille";
-import { DEPARTEMENTS, FLUX_STATUT_LABELS } from "@/domain/veille";
+import { DEPARTEMENTS, FLUX_STATUT_LABELS, conformiteStatutDepuisTaux } from "@/domain/veille";
 import { formaterDateFR, formaterDateHeureFR } from "@/domain/jalons";
 
 /**
@@ -390,7 +390,9 @@ export function VueTexteImmersive({
                 </h3>
                 <ul className="mt-2 space-y-2">
                   {texte.fiches.map((f) => {
-                    const st = STATUTS_FR[f.statut] ?? STATUTS_FR.NON_CONFORME_0;
+                    // Étiquette dérivée du taux piloté (pas de l'étiquette figée à
+                    // l'assignation) : elle doit dire la même chose que le chiffre.
+                    const st = STATUTS_FR[conformiteStatutDepuisTaux(f.tauxAvancement)] ?? STATUTS_FR.NON_CONFORME_0;
                     return (
                       <li key={f.id} className="rounded-lg border border-slate-200 bg-white px-3 py-2">
                         <div className="flex items-center justify-between gap-2">

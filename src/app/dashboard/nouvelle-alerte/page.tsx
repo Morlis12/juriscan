@@ -347,26 +347,6 @@ export default function NouvelleAlertePage() {
     void analyserFichiers([f]);
   }
 
-  /** Charge un fichier d'exemple intégré au projet (JO n°53) pour tester l'analyse. */
-  async function chargerExemple(kind: "pdf" | "image") {
-    setErreur(null);
-    try {
-      const url = kind === "pdf" ? "/exemples/53.pdf" : "/exemples/53-image-test.png";
-      const nom = kind === "pdf" ? "53.pdf" : "53-image-test.png";
-      const reponse = await fetch(url);
-      if (!reponse.ok) throw new Error("Exemple introuvable.");
-      const blob = await reponse.blob();
-      const fichier = new File([blob], nom, {
-        type: blob.type || (kind === "pdf" ? "application/pdf" : "image/png"),
-      });
-      setAAnalyser((prev) => [...prev, fichier]);
-      // Un exemple se lance immédiatement : c'est un raccourci de démonstration.
-      void analyserFichiers([fichier]);
-    } catch (e) {
-      setErreur(e instanceof Error ? e.message : "Impossible de charger l'exemple.");
-    }
-  }
-
   /**
    * Analyse un ou plusieurs documents, l'un après l'autre.
    *
@@ -979,25 +959,6 @@ export default function NouvelleAlertePage() {
               Les documents sont analysés l&apos;un après l&apos;autre : plus lent, mais
               chaque résultat est conservé dès qu&apos;il arrive — un échec
               n&apos;annule pas les autres.
-            </p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <button
-                type="button"
-                onClick={() => chargerExemple("pdf")}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-brand-blue transition-colors hover:border-brand-blue"
-              >
-                📄 Tester avec l&apos;exemple 53.pdf
-              </button>
-              <button
-                type="button"
-                onClick={() => chargerExemple("image")}
-                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-xs font-semibold text-brand-blue transition-colors hover:border-brand-blue"
-              >
-                🖼️ Tester avec l&apos;image d&apos;exemple
-              </button>
-            </div>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Fichiers de test intégrés au projet — JO n°53 du 2 juillet 2026.
             </p>
             {loading && (
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">

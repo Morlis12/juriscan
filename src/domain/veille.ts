@@ -93,6 +93,23 @@ export const CONFORMITE_STATUTS = Object.keys(
 ) as ConformiteStatut[];
 
 /**
+ * Statut d'affichage déduit du taux piloté (0–100).
+ *
+ * La colonne `statutConformite` d'une fiche n'est modifiée que depuis la page
+ * fiche ; le taux, lui, est ajustable depuis le tableau de bord. Sans cette
+ * fonction d'inversion, l'étiquette (« Partiel 50 % ») contredirait le chiffre
+ * affiché à côté (« 63 % ») — d'où cette règle unique, partagée par le tableau
+ * de bord et la vue immersive.
+ */
+export function conformiteStatutDepuisTaux(taux: number): ConformiteStatut {
+  if (taux >= 100) return "CONFORME_100";
+  if (taux >= 75) return "PARTIELLEMENT_75";
+  if (taux >= 50) return "PARTIELLEMENT_50";
+  if (taux >= 25) return "PARTIELLEMENT_25";
+  return "NON_CONFORME_0";
+}
+
+/**
  * Workflow à double validation AGL JuriCompliance (IA + Juridique) × JuriDesk (BU).
  * Portable Dataverse : OptionSet `FluxStatut` sur la table `VeilleFiche`.
  * - ATTENTE_VALIDATION_JURIDIQUE : l'IA a fait l'OCR et proposé la BU, le juridique doit valider.

@@ -48,8 +48,7 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
       <ul className="list-disc space-y-1 pl-5">
         <li>
           Déposez <strong>un ou plusieurs PDF / images</strong> (glisser-déposer ou
-          parcours, sélection multiple), ou utilisez les boutons « Tester avec
-          l&apos;exemple » (JO n°53 intégré), puis « Scanner ». La saisie manuelle
+          parcours, sélection multiple), puis « Scanner ». La saisie manuelle
           reste possible.
         </li>
         <li>
@@ -138,16 +137,24 @@ const SECTIONS: { titre: string; contenu: React.ReactNode }[] = [
     contenu: (
       <ul className="list-disc space-y-1 pl-5">
         <li>
-          <strong>Alertes globales</strong> : nombre de fiches BU suivies sur le
-          périmètre affiché (tient compte des filtres).
+          <strong>Textes suivis</strong> : nombre de textes affichés dans le
+          tableau (un texte peut regrouper plusieurs fiches BU — le nombre de
+          fiches est rappelé juste en dessous).
         </li>
         <li>
-          <strong>Taux de conformité moyen (%)</strong> : moyenne des niveaux de
-          conformité des fiches affichées.
+          <strong>Taux de conformité moyen (%)</strong> : moyenne des taux
+          pilotés affichés dans le tableau. Chaque pastille BU du tableau
+          porte le même chiffre, et son étiquette (ex. « Partiel 75 % »)
+          est déduite de ce taux — jamais l’inverse.
         </li>
         <li>
-          <strong>Actions en retard</strong> : actions dont le délai est dépassé
-          avec un avancement inférieur à 100 %.
+          <strong>Actions en retard</strong> : actions des textes affichés dont
+          le délai est dépassé avec un avancement inférieur à 100 %. Le chiffre suit immédiatement vos ajustements de taux dans le tableau.
+        </li>
+        <li>
+          <strong>Compteurs du workflow</strong> : fiches par statut, sur le même
+          périmètre que le tableau (BU, type, date, recherche) hors filtre
+          workflow. Cliquer un compteur n’affiche que ces fiches-là.
         </li>
       </ul>
     ),

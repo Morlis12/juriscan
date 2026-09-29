@@ -28,6 +28,8 @@ export interface MockAlerte {
 export interface MockAction {
   id: string;
   numeroOrdre: string;
+  /** Direction concernée — clé de rattachement fiche ↔ action (même texte, même BU). */
+  departement: DepartementCode;
   libelleAction: string;
   responsable: string;
   /** ISO date (YYYY-MM-DD). */
@@ -212,6 +214,7 @@ export const MOCK_ACTIONS: MockAction[] = MOCK_ALERTES.filter(
 ).map((a, i) => ({
   id: `mock-action-${i + 1}`,
   numeroOrdre: a.numeroOrdre,
+  departement: a.departement,
   libelleAction: ACTION_LIBELLES[a.statut],
   responsable: RESPONSABLES[a.departement],
   delai: addDays(a.dateEntreeVigueur, a.statut === "NON_CONFORME_0" ? 60 : 120),

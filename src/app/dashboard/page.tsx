@@ -7,6 +7,7 @@ import {
   CONFORMITE_POURCENTAGE,
   DEPARTEMENTS,
   FLUX_STATUT_LABELS,
+  conformiteStatutDepuisTaux,
 } from "@/domain/veille";
 import { messageAccesRefuse, peutOuvrirFiche, peutPiloterConformite, peutValiderVersMetier } from "@/domain/acces";
 import { dureeDepuis, formaterDateFR, formaterDateHeureFR } from "@/domain/jalons";
@@ -20,7 +21,6 @@ import {
   MOCK_ACTIONS,
   MOCK_ALERTES,
   actionsEnRetard,
-  tauxConformiteMoyen,
   type MockAction,
   type MockAlerte,
 } from "@/data/veille-mock";
@@ -163,6 +163,14 @@ export default function DashboardPage() {
   const [recherche, setRecherche] = useState("");
   // Taux ajustés par les BU depuis le tableau (affichage immédiat, PATCH au relâcher).
   const [tauxCorriges, setTauxCorriges] = useState<Record<string, number>>({});
+  /**
+   * Taux d'actions corrigés localement, clé `${numeroOrdre}§${departement}`.
+   * Sans cette duplication, le compteur « Actions en retard » resterait sur les
+   * valeurs d'avant l'édition : les actions vivent dans `toutesActions`, cléées
+   * par leur propre id, pas par fiche. La clé (texte, BU) est exacte dans les
+   * deux mondes (une action = un texte × une BU).
+   */
+  const [tauxActionsCorriges, setTauxActionsCorriges] = useState<Record<string, number>>({});
   // Texte déplié : affiche le niveau de conformité de chaque BU pour ce texte.
   const [texteOuvert, setTexteOuvert] = useState<string | null>(null);
   /** Texte ouvert en vue immersive (clic sur une barre du graphique). */
@@ -223,6 +231,7 @@ export default function DashboardPage() {
               actions.push({
                 id: `db-action-${action.id}`,
                 numeroOrdre: a.numeroOrdre,
+                departement: f.departement,
                 libelleAction: action.libelleAction,
                 responsable: "Assigné (base)",
                 delai: (action.delai ?? a.createdAt).slice(0, 10),
@@ -276,7 +285,14 @@ export default function DashboardPage() {
     ),
     [dbAlertes, tauxCorriges],
   );
-  const toutesActions = useMemo(() => [...dbActions, ...MOCK_ACTIONS], [dbActions]);
+  const toutesActions = useMemo(
+    () =>
+      [...dbActions, ...MOCK_ACTIONS].map((a) => {
+        const corrige = tauxActionsCorriges[`${a.numeroOrdre}§${a.departement}`];
+        return corrige !== undefined ? { ...a, tauxAvancement: corrige } : a;
+      }),
+    [dbActions, tauxActionsCorriges],
+  );
 
   // Types de texte disponibles pour le filtre (Décret, Loi, Arrêté…).
   const typesDisponibles = useMemo(
@@ -313,7 +329,10 @@ export default function DashboardPage() {
     [alertesBase, filtreFlux],
   );
 
-  // Compteurs du workflow (bandeau cliquable) sur tout le périmètre chargé.
+  // Compteurs du workflow sous TOUS les filtres du tableau SAUF le filtre
+  // workflow lui-même : cliquer un compteur affiche exactement ce nombre de
+  // fiches (facet). Calculés sur toutes les données chargées, ils mentiraient
+  // dès qu'un filtre BU / type / date / recherche est actif.
   const compteursFlux = useMemo(() => {
     const compte: Record<FluxStatut, number> = {
       ATTENTE_VALIDATION_JURIDIQUE: 0,
@@ -321,15 +340,12 @@ export default function DashboardPage() {
       APPROUVE_METIER: 0,
       REJETE_METIER: 0,
     };
-    for (const a of toutesAlertes) compte[a.fluxStatut] += 1;
+    for (const a of alertesBase) compte[a.fluxStatut] += 1;
     return compte;
-  }, [toutesAlertes]);
+  }, [alertesBase]);
 
-  // Compteur de rejets (bouton vers la page dédiée) sur tout le périmètre.
-  const nbRejets = useMemo(
-    () => toutesAlertes.filter((a) => a.fluxStatut === "REJETE_METIER").length,
-    [toutesAlertes],
-  );
+  // Badge « Rejet » de l'en-tête : même périmètre que le compteur du corps.
+  const nbRejets = compteursFlux.REJETE_METIER;
   /** La centrale valide la fiche IA → bascule vers l'approbation métier. */
   async function validerVersMetier(id: string) {
     if (!peutValiderVersMetier(buConnectee)) {
@@ -364,6 +380,9 @@ export default function DashboardPage() {
     }
     const valeur = Math.min(100, Math.max(0, Math.round(taux)));
     setTauxCorriges((prev) => ({ ...prev, [f.id]: valeur }));
+    // L'action de ce texte × cette BU suit immédiatement : sans cela, le
+    // compteur « Actions en retard » afficherait l'ancien taux.
+    setTauxActionsCorriges((prev) => ({ ...prev, [`${f.numeroOrdre}§${f.departement}`]: valeur }));
     try {
       const reponse = await fetch(`/api/veille/${encodeURIComponent(f.id)}`, {
         method: "PATCH",
@@ -442,7 +461,17 @@ export default function DashboardPage() {
     () => actionsEnRetard(actionsPerimetre).length,
     [actionsPerimetre],
   );
-  const tauxMoyen = useMemo(() => tauxConformiteMoyen(alertes), [alertes]);
+  // Taux moyen du périmètre affiché : moyenne des taux pilotés par les BU sur
+  // les fiches visibles dans le tableau. Pas la moyenne des étiquettes de
+  // statut (qui datent de l'assignation et ne bougent pas quand on ajuste un
+  // taux) : cette carte et les barres du graphique doivent dire la même chose.
+  const tauxMoyen = useMemo(
+    () =>
+      alertes.length === 0
+        ? 0
+        : Math.round(alertes.reduce((somme, f) => somme + f.tauxAvancement, 0) / alertes.length),
+    [alertes],
+  );
 
   // Une direction ne voit que son périmètre : le filtre est calé sur sa session,
   // seule la centrale peut basculer sur une autre BU ou sur la vue générale.
@@ -645,17 +674,17 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* CARTES KPI */}
+        {/* CARTES KPI — chaque nombre égale ce que montre le tableau ci-dessous */}
         <section className="grid gap-4 sm:grid-cols-3">
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Alertes Globales
+              Textes suivis
             </p>
             <p className="mt-1 text-3xl font-black text-brand-blue">
-              {alertes.length}
+              {groupes.length}
             </p>
             <p className="mt-1 text-xs text-slate-400">
-              Textes suivis sur le périmètre
+              {alertes.length} fiche{alertes.length > 1 ? "s" : ""} BU sur le périmètre
             </p>
           </div>
           <div className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -664,6 +693,9 @@ export default function DashboardPage() {
             </p>
             <p className="mt-1 text-3xl font-black text-brand-blue">
               {tauxMoyen} %
+            </p>
+            <p className="mt-1 text-xs text-slate-400">
+              Moyenne des taux affichés dans le tableau ({alertes.length} fiche{alertes.length > 1 ? "s" : ""})
             </p>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-200">
               <div
@@ -896,8 +928,8 @@ export default function DashboardPage() {
                             {g.fiches.map((f) => (
                               <span
                                 key={f.id}
-                                title={`${f.departement} : ${STATUT_LABEL[f.statut]} (${f.tauxAvancement} %)`}
-                                className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[f.statut]}`}
+                                title={`${f.departement} : ${STATUT_LABEL[conformiteStatutDepuisTaux(f.tauxAvancement)]} (${f.tauxAvancement} %)`}
+                                className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[conformiteStatutDepuisTaux(f.tauxAvancement)]}`}
                               >
                                 {f.departement} · {f.tauxAvancement} %
                               </span>
@@ -955,9 +987,9 @@ export default function DashboardPage() {
                                       </p>
                                       <p className="mt-1 flex flex-wrap items-center gap-1">
                                         <span
-                                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[f.statut]}`}
+                                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${BADGE[conformiteStatutDepuisTaux(f.tauxAvancement)]}`}
                                         >
-                                          {STATUT_LABEL[f.statut]} · {f.tauxAvancement} %
+                                          {STATUT_LABEL[conformiteStatutDepuisTaux(f.tauxAvancement)]} · {f.tauxAvancement} %
                                         </span>
                                         <span
                                           className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ${FLUX_BADGE[f.fluxStatut]}`}

@@ -20,6 +20,11 @@ voir `src/lib/dataverse/tables.ts`).
   résumé IA, métadonnées et conformité par direction. Le texte complet est chargé
   en tâche de fond via `GET /api/veille/[id]` ; navigation ← / → entre les textes,
   Échap referme, focus restitué à la barre d'origine, défilement de page verrouillé.
+  **Règle d'équilibre cartes ↔ tableau** (vérifiée en test) : « Textes suivis » =
+  lignes du tableau, « Taux moyen » = moyenne des taux affichés, compteurs
+  workflow = fiches du même périmètre (hors filtre workflow), retards suivent les
+  taux édités. Les pastilles BU portent l'étiquette déduite du taux piloté
+  (`conformiteStatutDepuisTaux`), jamais l'inverse.
 - **Analyse IA multi-actes** (`/dashboard/nouvelle-alerte`) : dépôt PDF/image →
   extraction (IA, clé requise — pas de mode démo) ou saisie manuelle. « 1 document »
   = « N textes » (un JO = des dizaines d'actes, jamais fusionnés) : navigation
@@ -43,8 +48,9 @@ voir `src/lib/dataverse/tables.ts`).
   parallèle (×3, 1 retry 429/5xx) pour une analyse rapide et ciblée :
   pertinence `Directe` / `Indirecte` / `Hors périmètre` (jamais de BU suggérée
   hors périmètre ; `applicableAGLCI` décoché par défaut dans ce cas, la centrale
-  tranche). Fichiers de test : `public/exemples/` (JO n°53, chargeables depuis
-  l'écran). Réponse brute loggée (`GEMINI_RAW_*`, voir logs Vercel).
+  tranche). Fichiers de test : `public/exemples/` (JO n°53, conservés pour les
+  tests techniques — ils ne sont plus proposés dans l'interface d'assignation).
+  Réponse brute loggée (`GEMINI_RAW_*`, voir logs Vercel).
 - **Workflow à double validation** : `ATTENTE_VALIDATION_JURIDIQUE` →
   `ATTENTE_APPROBATION_METIER` → `APPROUVE_METIER` | `REJETE_METIER`
   (approbations BU, rejets à retraiter par la centrale).
